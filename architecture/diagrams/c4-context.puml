@@ -1,0 +1,13 @@
+@startuml c4-context
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+Person(operator, "Operator", "Sends movement commands to the rover")
+
+System(system, "Mars Rover Control System", "Processes commands and controls rover movement")
+
+System_Ext(plateau, "Mars Plateau", "Grid defining boundaries of movement")
+
+Rel(operator, system, "Sends commands (L, R, M)")
+Rel(system, plateau, "Reads boundaries / updates position")
+
+@enduml

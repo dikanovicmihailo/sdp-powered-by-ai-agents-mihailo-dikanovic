@@ -1,0 +1,16 @@
+@startuml c4-container
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+Person(operator, "Operator", "Sends movement commands to the rover")
+
+System_Boundary(sys, "Mars Rover Control System") {
+    Container(cli, "CLI Application", "Python 3.12", "Reads commands from stdin, processes rover missions, writes final positions to stdout")
+}
+
+System_Ext(plateau, "Mars Plateau", "Logical grid boundary — modelled as an in-memory value object inside the CLI application")
+
+Rel(operator, cli, "Sends plateau size, rover positions and commands", "stdin (plain text)")
+Rel(cli, operator, "Returns final rover positions and headings", "stdout (plain text)")
+Rel(cli, plateau, "Validates rover positions against grid boundaries")
+
+@enduml
