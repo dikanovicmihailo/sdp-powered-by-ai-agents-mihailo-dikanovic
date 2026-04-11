@@ -4,13 +4,13 @@
 
 The entire system is a single **CLI application** (one Python process). No external services or databases.
 
-See [`diagrams/c4-container.puml`](diagrams/c4-container.puml).
+![Container Diagram](diagrams/c4-container.svg)
 
 ---
 
 ## Level 2 — Components
 
-See [`diagrams/c4-component.puml`](diagrams/c4-component.puml).
+![Component Diagram](diagrams/c4-component.svg)
 
 ### Component Overview
 

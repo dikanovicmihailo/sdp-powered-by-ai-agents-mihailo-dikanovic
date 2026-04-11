@@ -2,33 +2,15 @@
 
 ## Scenario 1 — Happy Path (single rover)
 
-```
-Operator      __main__      InputParser    MissionController    Rover       Plateau
-   │              │               │                │              │             │
-   │─── stdin ───▶│               │                │              │             │
-   │              │── parse() ───▶│                │              │             │
-   │              │◀── plateau ───│                │              │             │
-   │              │◀── [(rover,   │                │              │             │
-   │              │     cmds)] ───│                │              │             │
-   │              │                                │              │             │
-   │              │── run_mission(plateau, pairs) ▶│              │             │
-   │              │                                │── Rover() ──▶│             │
-   │              │                                │              │             │
-   │              │                         [for each command]    │             │
-   │              │                                │── execute() ▶│             │
-   │              │                                │              │─is_within()▶│
-   │              │                                │              │◀── bool ────│
-   │              │                                │              │             │
-   │              │◀── [final rovers] ─────────────│              │             │
-   │              │── format() → stdout            │              │             │
-   │◀── stdout ───│                                │              │             │
-```
+![Happy Path Sequence](diagrams/runtime-happy-path.svg)
 
 ---
 
 ## Scenario 2 — Boundary Violation
 
 When `MoveForward` computes `(x + dx, y + dy)` and `Plateau.is_within()` returns `False`:
+
+![Boundary Violation Sequence](diagrams/runtime-boundary-violation.svg)
 
 1. The rover's position is **not updated** — it stays in place.
 2. Processing continues with the next command in the sequence.
@@ -38,15 +20,7 @@ When `MoveForward` computes `(x + dx, y + dy)` and `Plateau.is_within()` returns
 
 ## Scenario 3 — Multiple Rovers
 
-```
-MissionController
-  for rover_init, commands in pairs:
-      rover = Rover(rover_init)
-      for cmd in commands:
-          rover.execute(cmd)        # plateau passed via closure / injection
-      results.append(rover)
-  return results
-```
+![Multiple Rovers Sequence](diagrams/runtime-multiple-rovers.svg)
 
 Each rover is fully independent. The final state of rover N has no effect on rover N+1.
 

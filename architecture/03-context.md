@@ -2,7 +2,7 @@
 
 ## Context Diagram
 
-See [`diagrams/c4-context.puml`](diagrams/c4-context.puml) for the PlantUML source.
+![System Context](diagrams/c4-context.svg)
 
 ```
 ┌──────────┐   commands (L, R, M)    ┌──────────────────────────┐
