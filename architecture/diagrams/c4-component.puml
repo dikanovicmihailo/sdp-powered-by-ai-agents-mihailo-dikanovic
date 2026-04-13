@@ -1,0 +1,32 @@
+@startuml c4-component
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+Person(operator, "Operator", "Sends movement commands")
+
+Container_Boundary(cli, "CLI Application") {
+
+    Component(entry, "CLI Entry Point", "__main__.py", "Wires dependencies, reads stdin, writes stdout")
+
+    Component(parser, "InputParser", "adapters/input_parser.py", "Parses raw text into Plateau and (Rover, commands) pairs")
+    Component(formatter, "OutputFormatter", "adapters/output_formatter.py", "Serialises Rover state to 'x y HEADING' text")
+
+    Component(controller, "MissionController", "application/mission_controller.py", "Orchestrates rover missions — iterates command sequences per rover")
+
+    Component(plateau, "Plateau", "domain/plateau.py", "Value object: grid dimensions + is_within(x, y) boundary check")
+    Component(rover, "Rover", "domain/rover.py", "Entity: position (x, y) + heading; applies commands")
+    Component(heading, "Heading", "domain/heading.py", "Enum N/E/S/W — owns turn_left(), turn_right(), delta()")
+    Component(commands, "Commands", "domain/commands.py", "TurnLeft, TurnRight, MoveForward — callables that mutate Rover state")
+}
+
+Rel(operator, entry, "stdin — plateau size, rover positions, command strings")
+Rel(entry, parser, "parse(raw_text)")
+Rel(entry, controller, "run_mission(plateau, rover_command_pairs)")
+Rel(entry, formatter, "format(rovers)")
+Rel(formatter, operator, "stdout — final positions")
+
+Rel(controller, rover, "creates and drives")
+Rel(rover, commands, "executes")
+Rel(rover, heading, "delegates rotation and movement delta")
+Rel(commands, plateau, "checks is_within() before moving")
+
+@enduml

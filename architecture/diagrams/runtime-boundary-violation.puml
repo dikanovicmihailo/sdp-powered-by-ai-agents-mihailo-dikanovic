@@ -1,0 +1,11 @@
+@startuml runtime-boundary-violation
+participant MissionController
+participant Rover
+participant Plateau
+
+MissionController -> Rover: execute(MoveForward)
+Rover -> Plateau: is_within(x + dx, y + dy)
+Plateau --> Rover: false
+note right of Rover: position unchanged\nprocessing continues
+Rover --> MissionController: (position unchanged)
+@enduml

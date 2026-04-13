@@ -1,0 +1,15 @@
+@startuml runtime-multiple-rovers
+participant MissionController
+participant Rover
+participant Plateau
+
+loop for each (rover_init, commands) pair
+    MissionController -> Rover: Rover(rover_init)
+    loop for each command
+        MissionController -> Rover: execute(cmd)
+        Rover -> Plateau: is_within(x + dx, y + dy)
+        Plateau --> Rover: bool
+    end
+    MissionController -> MissionController: results.append(rover)
+end
+@enduml
