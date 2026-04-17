@@ -168,27 +168,107 @@ The output is plain text on stdout — one line per rover. No UI component requi
 
 **Story ID**: CLI-INFRA-002.1
 
-**As a** developer **I want** output to be written to the process stdout stream **so that** no file system or network writes are needed.
+**As a** developer **I want** the `GetMissionResults` Lambda to read all rover final positions from DynamoDB and return them in the standard `x y HEADING` format **so that** operators can retrieve results via an API call after the mission completes.
 
-**Architecture Reference**: [07-deployment.md](../../architecture/07-deployment.md) — single-process CLI, no persistence
+**Architecture Reference**: [07-deployment.md](../../architecture/07-deployment.md) — deployment topology; [09-architecture-decisions.md](../../architecture/09-architecture-decisions.md) — ADR-001; [01-introduction.md](../../architecture/01-introduction.md) — FR-5
 
-**Scenarios:**
+---
 
-### SCENARIO 1: Output uses only the process stdout stream
+### SCENARIO 1: Lambda queries all rover records for a mission and returns formatted positions
 
 **Scenario ID**: CLI-INFRA-002.1-S1
 
 **GIVEN**
-* A mission completes
+* DynamoDB contains completed rover records for `MISSION#abc123`:
+  * `SK=ROVER#0`: `x=1, y=3, heading=N, status=COMPLETED`
+  * `SK=ROVER#1`: `x=5, y=1, heading=E, status=COMPLETED`
 
 **WHEN**
-* Results are written
+* The `GetMissionResults` Lambda is invoked with `missionId=abc123`
 
 **THEN**
-* Only `sys.stdout` is written to
-* No files, databases, or network connections are used
+* It queries `PK=MISSION#abc123` with `SK begins_with ROVER#`
+* Returns a JSON response:
+  ```json
+  {
+    "missionId": "abc123",
+    "results": ["1 3 N", "5 1 E"]
+  }
+  ```
+* Rovers are ordered by `SK` (deployment order)
 
-No infrastructure changes. Output goes to stdout of the single CLI process.
+---
+
+### SCENARIO 2: Lambda returns 404 when mission does not exist
+
+**Scenario ID**: CLI-INFRA-002.1-S2
+
+**GIVEN**
+* No records exist for `MISSION#unknown` in DynamoDB
+
+**WHEN**
+* `GetMissionResults` is invoked with `missionId=unknown`
+
+**THEN**
+* The Lambda returns HTTP 404 with body `{"error": "Mission not found"}`
+* No exception is logged to CloudWatch Logs (this is an expected business case, not an error)
+
+---
+
+### SCENARIO 3: GetMissionResults is exposed via API Gateway
+
+**Scenario ID**: CLI-INFRA-002.1-S3
+
+**GIVEN**
+* An API Gateway REST API is defined in `template.yaml`
+* The `GET /missions/{missionId}/results` route targets `GetMissionResults`
+
+**WHEN**
+* An operator calls `GET /missions/abc123/results`
+
+**THEN**
+* API Gateway invokes the Lambda and returns the JSON response
+* The response includes `Content-Type: application/json`
+* HTTP 200 on success, 404 on missing mission
+
+**SAM resource snippet:**
+```yaml
+GetMissionResultsFunction:
+  Type: AWS::Serverless::Function
+  Properties:
+    Handler: mars_rover.handlers.get_results.handler
+    Runtime: python3.12
+    Events:
+      GetResults:
+        Type: Api
+        Properties:
+          Path: /missions/{missionId}/results
+          Method: GET
+    Policies:
+      - Statement:
+          - Effect: Allow
+            Action:
+              - dynamodb:Query
+              - dynamodb:GetItem
+            Resource: !GetAtt MarsRoverMissionsTable.Arn
+```
+
+---
+
+### SCENARIO 4: CloudWatch dashboard shows mission result retrieval latency
+
+**Scenario ID**: CLI-INFRA-002.1-S4
+
+**GIVEN**
+* A CloudWatch dashboard `MarsRoverOps` is defined in `template.yaml`
+
+**WHEN**
+* The dashboard is opened in the AWS Console
+
+**THEN**
+* It shows a widget for `GetMissionResults` Lambda duration (p50, p95, p99)
+* It shows a widget for `GetMissionResults` error count
+* It shows a widget for DynamoDB `SuccessfulRequestLatency` on the `MarsRoverMissions` table
 
 ---
 
@@ -196,5 +276,8 @@ No infrastructure changes. Output goes to stdout of the single CLI process.
 
 - [ ] `OutputFormatter` implemented in `mars_rover/adapters/output_formatter.py`
 - [ ] All formatter unit tests pass
-- [ ] Output matches kata expected format exactly (space-separated `x y HEADING`)
+- [ ] `GetMissionResults` Lambda queries DynamoDB by `PK=MISSION#<id>` and returns ordered `x y HEADING` lines
+- [ ] Lambda returns HTTP 404 for unknown mission IDs
+- [ ] `GET /missions/{missionId}/results` API Gateway route defined in `template.yaml`
+- [ ] CloudWatch dashboard `MarsRoverOps` includes latency and error widgets
 - [ ] `ruff`, `black`, and `isort` pass with no warnings

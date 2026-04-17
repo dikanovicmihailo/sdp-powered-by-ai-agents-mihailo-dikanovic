@@ -215,34 +215,112 @@ $ echo $?
 
 **Story ID**: CLI-INFRA-003.1
 
-**As a** developer **I want** error handling to be entirely within the CLI process **so that** no external logging service or error tracking system is needed.
+**As a** developer **I want** the `CreateMission` Lambda to return structured error responses and log validation failures to CloudWatch **so that** operators get actionable error messages and the ops team can monitor input quality.
 
-**Architecture Reference**: [07-deployment.md](../../architecture/07-deployment.md) — single-process CLI, no persistence
+**Architecture Reference**: [07-deployment.md](../../architecture/07-deployment.md) — deployment topology; [08-cross-cutting-concepts.md](../../architecture/08-cross-cutting-concepts.md) — error handling; [11-risks-and-technical-debts.md](../../architecture/11-risks-and-technical-debts.md) — R-2, TD-3
 
-**Scenarios:**
+---
 
-### SCENARIO 1: Error handling requires no external resources
+### SCENARIO 1: Lambda returns HTTP 400 with structured error body on invalid input
 
 **Scenario ID**: CLI-INFRA-003.1-S1
 
 **GIVEN**
-* An input error occurs
+* The `CreateMission` Lambda receives a request with `"heading": "X"`
 
 **WHEN**
-* The CLI handles the error
+* `InputParser.parse()` raises `ValueError`
 
 **THEN**
-* Only `sys.stderr` and `sys.exit()` are used
-* No file, database, network, or logging service is contacted
+* The Lambda returns HTTP 400:
+  ```json
+  {
+    "error": "Invalid heading 'X'. Must be one of N, E, S, W.",
+    "field": "rovers[0].heading"
+  }
+  ```
+* No DynamoDB write occurs
+* No event is published to EventBridge
 
-No infrastructure changes. Error handling is entirely within the CLI process.
+---
+
+### SCENARIO 2: Validation errors are logged to CloudWatch Logs at WARN level
+
+**Scenario ID**: CLI-INFRA-003.1-S2
+
+**GIVEN**
+* The Lambda catches a `ValueError` from `InputParser`
+
+**WHEN**
+* The error response is returned
+
+**THEN**
+* A structured log line is emitted:
+  ```json
+  {
+    "level": "WARN",
+    "event": "ValidationError",
+    "requestId": "<lambda-request-id>",
+    "error": "Invalid heading 'X'. Must be one of N, E, S, W.",
+    "field": "rovers[0].heading"
+  }
+  ```
+* The log is queryable via CloudWatch Logs Insights using `filter event = "ValidationError"`
+
+---
+
+### SCENARIO 3: CloudWatch metric filter counts validation errors per minute
+
+**Scenario ID**: CLI-INFRA-003.1-S3
+
+**GIVEN**
+* A CloudWatch metric filter is defined on the `CreateMission` log group
+
+**WHEN**
+* A `ValidationError` log event is emitted
+
+**THEN**
+* The custom metric `MarsRover/ValidationErrors` is incremented by 1
+* The metric appears on the `MarsRoverOps` CloudWatch dashboard
+
+**Metric filter (SAM):**
+```yaml
+ValidationErrorMetricFilter:
+  Type: AWS::Logs::MetricFilter
+  Properties:
+    LogGroupName: !Sub "/aws/lambda/${CreateMissionFunction}"
+    FilterPattern: '{ $.event = "ValidationError" }'
+    MetricTransformations:
+      - MetricName: ValidationErrors
+        MetricNamespace: MarsRover
+        MetricValue: "1"
+```
+
+---
+
+### SCENARIO 4: CloudWatch alarm fires when validation error rate is high
+
+**Scenario ID**: CLI-INFRA-003.1-S4
+
+**GIVEN**
+* The `MarsRover/ValidationErrors` custom metric is being published
+
+**WHEN**
+* More than 20 validation errors occur within a 5-minute window
+
+**THEN**
+* The `HighValidationErrorRate` alarm transitions to `ALARM`
+* This signals a likely broken client or a change in the input format contract
+* An SNS notification is sent to the ops team
 
 ---
 
 ## Definition of Done
 
 - [ ] All 8 CLI error integration tests pass
-- [ ] Exit code is 1 on any `ValueError` from `InputParser`
-- [ ] Error message is written to stderr, not stdout
-- [ ] stdout is empty when an error occurs
+- [ ] `CreateMission` Lambda returns HTTP 400 with `{ "error": "...", "field": "..." }` on `ValueError`
+- [ ] No DynamoDB write or EventBridge event on validation failure
+- [ ] Structured `ValidationError` log emitted at `WARN` level with `requestId` and `field`
+- [ ] `ValidationErrorMetricFilter` defined in `template.yaml`; metric increments on each validation error
+- [ ] `HighValidationErrorRate` alarm defined; fires when > 20 errors in 5 minutes
 - [ ] `ruff`, `black`, and `isort` pass with no warnings

@@ -248,27 +248,109 @@ Rover deployment is expressed via the stdin text format `1 2 N`. Parsing is cove
 
 **Story ID**: ROVER-INFRA-001.1
 
-**As a** developer **I want** rover state to be held in memory only **so that** no persistence or external service is needed for a single CLI run.
+**As a** developer **I want** each rover deployment to be stored as a DynamoDB record and trigger a `RoverDeployed` event **so that** downstream services can react to new rovers without polling the database.
 
-**Architecture Reference**: [07-deployment.md](../../architecture/07-deployment.md) — single-process CLI, no persistence
+**Architecture Reference**: [07-deployment.md](../../architecture/07-deployment.md) — deployment topology; [09-architecture-decisions.md](../../architecture/09-architecture-decisions.md) — ADR-001 DynamoDB single-table design; [02-constraints.md](../../architecture/02-constraints.md) — TC-1
 
-**Scenarios:**
+---
 
-### SCENARIO 1: Rover lifecycle is bounded to one process invocation
+### SCENARIO 1: Rover record is written to DynamoDB on deployment
 
 **Scenario ID**: ROVER-INFRA-001.1-S1
 
 **GIVEN**
-* The CLI is invoked
+* A DynamoDB table `MarsRoverMissions` exists
+* A mission `abc123` with plateau `5 5` already exists
+* `CreateMission` (CLI-INFRA-001.1) calls `DeployRover` internally for each rover in the request
 
 **WHEN**
-* A `Rover` is created and commands are executed
+* The `DeployRover` Lambda is invoked with `missionId=abc123`, `x=1`, `y=2`, `heading=N`, `commands="LMLMLMLMM"`
 
 **THEN**
-* No file, database, or network connection is opened
-* Rover state is garbage-collected when the process exits
+* A record is written with `PK=MISSION#abc123`, `SK=ROVER#0`, `x=1`, `y=2`, `heading=N`, `commands="LMLMLMLMM"`, `status=DEPLOYED`
+* The write succeeds
+* The rover index `0` is returned to the caller
 
-No infrastructure changes. Rover state is in-memory only for the duration of a single CLI run.
+**DynamoDB item shape:**
+```json
+{
+  "PK": "MISSION#abc123",
+  "SK": "ROVER#0",
+  "x": 1,
+  "y": 2,
+  "heading": "N",
+  "commands": "LMLMLMLMM",
+  "status": "DEPLOYED"
+}
+```
+
+> **Note:** `DeployRover` is an internal Lambda, not a public API endpoint. It is invoked by `CreateMission` once per rover in the submitted mission. Operators never call it directly.
+
+---
+
+### SCENARIO 2: RoverDeployed event is published to EventBridge on successful write
+
+**Scenario ID**: ROVER-INFRA-001.1-S2
+
+**GIVEN**
+* The `DeployRover` Lambda has written the rover record to DynamoDB
+
+**WHEN**
+* The DynamoDB write succeeds
+
+**THEN**
+* The Lambda publishes a `RoverDeployed` event to the `MarsRoverEventBus` EventBridge bus
+* The event payload includes `missionId`, `roverIndex`, `x`, `y`, `heading`
+* Downstream consumers (e.g. a mission status tracker) can subscribe to this event
+
+**EventBridge event shape:**
+```json
+{
+  "source": "mars-rover.deploy",
+  "detail-type": "RoverDeployed",
+  "detail": {
+    "missionId": "abc123",
+    "roverIndex": 0,
+    "x": 1,
+    "y": 2,
+    "heading": "N"
+  }
+}
+```
+
+---
+
+### SCENARIO 3: DeployRover Lambda is deployed with least-privilege IAM
+
+**Scenario ID**: ROVER-INFRA-001.1-S3
+
+**GIVEN**
+* The `DeployRover` Lambda is defined in `template.yaml`
+
+**WHEN**
+* `sam deploy` is run
+
+**THEN**
+* The Lambda's IAM role has exactly: `dynamodb:PutItem` on `MarsRoverMissions` and `events:PutEvents` on `MarsRoverEventBus`
+* No wildcard (`*`) resource permissions are granted
+* The function has a 10-second timeout and 128 MB memory
+
+---
+
+### SCENARIO 4: CloudWatch alarm fires when rover deployment fails
+
+**Scenario ID**: ROVER-INFRA-001.1-S4
+
+**GIVEN**
+* A CloudWatch alarm monitors the `DeployRover` Lambda error metric
+
+**WHEN**
+* The Lambda fails (e.g. DynamoDB write rejected, EventBridge throttled)
+
+**THEN**
+* The `DeployRoverErrors` alarm transitions to `ALARM` within 1 minute
+* The error is logged to CloudWatch Logs with `missionId`, `roverIndex`, and the exception type
+* The alarm action notifies the ops SNS topic
 
 ---
 
@@ -278,5 +360,9 @@ No infrastructure changes. Rover state is in-memory only for the duration of a s
 - [ ] `Rover` dataclass implemented in `mars_rover/domain/rover.py`
 - [ ] All heading rotation and delta tests pass
 - [ ] All rover initialisation tests pass
+- [ ] `DeployRover` Lambda writes rover record to DynamoDB with correct item shape
+- [ ] `RoverDeployed` event published to `MarsRoverEventBus` on successful write
+- [ ] Lambda IAM role scoped to `dynamodb:PutItem` and `events:PutEvents` only
+- [ ] `DeployRoverErrors` CloudWatch alarm defined and wired to SNS topic
 - [ ] `ruff`, `black`, and `isort` pass with no warnings
 - [ ] No imports from `adapters/` or `application/` inside `domain/`

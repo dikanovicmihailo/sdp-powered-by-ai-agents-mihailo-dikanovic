@@ -215,27 +215,122 @@ def test_safe_stop_multiple_blocked_moves(plateau):
 
 **Story ID**: NAV-INFRA-002.1
 
-**As a** developer **I want** boundary enforcement to require no infrastructure **so that** the safe-stop is a pure in-memory domain rule.
+**As a** developer **I want** boundary safe-stop events to be logged to CloudWatch with structured metadata **so that** operators can detect misconfigured plateaus by querying logs rather than inspecting raw output.
 
-**Architecture Reference**: [07-deployment.md](../../architecture/07-deployment.md) — single-process CLI, no persistence
+**Architecture Reference**: [07-deployment.md](../../architecture/07-deployment.md) — deployment topology; [11-risks-and-technical-debts.md](../../architecture/11-risks-and-technical-debts.md) — R-1; [02-constraints.md](../../architecture/02-constraints.md) — DC-5
 
-**Scenarios:**
+---
 
-### SCENARIO 1: Safe-stop requires no external resources
+### SCENARIO 1: ExecuteCommands Lambda emits a structured log on every boundary safe-stop
 
 **Scenario ID**: NAV-INFRA-002.1-S1
 
 **GIVEN**
-* A rover reaches a boundary
+* The `ExecuteCommands` Lambda is processing a rover at `(0, 0, S)` with command `M`
 
 **WHEN**
-* `MoveForward` applies the safe-stop
+* `MoveForward` applies the safe-stop (position unchanged)
 
 **THEN**
-* No file, log, database, or network call is made
-* The decision is made entirely within the `Plateau.is_within()` call
+* The Lambda emits a structured log line to CloudWatch Logs:
+  ```json
+  {
+    "level": "WARN",
+    "event": "BoundarySafeStop",
+    "missionId": "abc123",
+    "roverIndex": 0,
+    "x": 0,
+    "y": 0,
+    "heading": "S",
+    "attemptedDirection": "S"
+  }
+  ```
+* The rover's final DynamoDB record still reflects the last valid position
 
-No infrastructure changes.
+---
+
+### SCENARIO 2: CloudWatch Logs Insights query identifies missions with boundary violations
+
+**Scenario ID**: NAV-INFRA-002.1-S2
+
+**GIVEN**
+* Multiple Lambda invocations have emitted `BoundarySafeStop` log events
+
+**WHEN**
+* An operator runs the following CloudWatch Logs Insights query:
+  ```
+  fields missionId, roverIndex, x, y, heading
+  | filter event = "BoundarySafeStop"
+  | stats count(*) as violations by missionId
+  | sort violations desc
+  ```
+
+**THEN**
+* The query returns a table of missions ordered by boundary violation count
+* This allows operators to identify misconfigured plateaus without re-running missions
+
+---
+
+### SCENARIO 3: CloudWatch metric filter counts boundary safe-stops per minute
+
+**Scenario ID**: NAV-INFRA-002.1-S3
+
+**GIVEN**
+* A CloudWatch metric filter is defined on the `ExecuteCommands` log group
+
+**WHEN**
+* A `BoundarySafeStop` log event is emitted
+
+**THEN**
+* The custom metric `MarsRover/BoundarySafeStops` is incremented by 1
+* The metric is visible in the `MarsRoverOps` CloudWatch dashboard
+
+**Metric filter (SAM):**
+```yaml
+BoundarySafeStopMetricFilter:
+  Type: AWS::Logs::MetricFilter
+  Properties:
+    LogGroupName: !Sub "/aws/lambda/${ExecuteCommandsFunction}"
+    FilterPattern: '{ $.event = "BoundarySafeStop" }'
+    MetricTransformations:
+      - MetricName: BoundarySafeStops
+        MetricNamespace: MarsRover
+        MetricValue: "1"
+```
+
+---
+
+### SCENARIO 4: CloudWatch alarm fires when safe-stop rate is abnormally high
+
+**Scenario ID**: NAV-INFRA-002.1-S4
+
+**GIVEN**
+* The `MarsRover/BoundarySafeStops` custom metric is being published
+
+**WHEN**
+* More than 10 safe-stops occur within a 5-minute window
+
+**THEN**
+* The `HighBoundarySafeStopRate` alarm transitions to `ALARM`
+* An SNS notification is sent to the ops team
+* This signals a likely misconfigured plateau that needs operator attention
+
+**CloudWatch alarm (SAM):**
+```yaml
+HighBoundarySafeStopRateAlarm:
+  Type: AWS::CloudWatch::Alarm
+  Properties:
+    AlarmName: HighBoundarySafeStopRate
+    MetricName: BoundarySafeStops
+    Namespace: MarsRover
+    Statistic: Sum
+    Period: 300
+    EvaluationPeriods: 1
+    Threshold: 10
+    ComparisonOperator: GreaterThanThreshold
+    AlarmActions:
+      - !Ref OpsAlertTopic
+```
 
 ---
 
@@ -244,4 +339,8 @@ No infrastructure changes.
 - [ ] All 7 boundary tests pass
 - [ ] No exception is raised on any boundary violation
 - [ ] Mission continues normally after a safe-stop (NAV-STORY-002-S5)
+- [ ] `ExecuteCommands` Lambda emits structured `BoundarySafeStop` log on every safe-stop
+- [ ] CloudWatch Logs Insights query documented and verified against sample log data
+- [ ] `BoundarySafeStopMetricFilter` defined in `template.yaml`; metric increments on each safe-stop
+- [ ] `HighBoundarySafeStopRate` alarm defined; fires when > 10 safe-stops in 5 minutes
 - [ ] `ruff`, `black`, and `isort` pass with no warnings

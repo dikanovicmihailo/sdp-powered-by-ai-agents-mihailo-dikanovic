@@ -140,7 +140,11 @@ class ObstacleEncountered(Exception):
     """Raised when MoveForward would enter an obstacle cell."""
 
 
+# Update MoveForward.__call__ only — __init__ is unchanged from NAV-STORY-001
 class MoveForward:
+    def __init__(self, plateau: "Plateau") -> None:
+        self._plateau = plateau  # unchanged
+
     def __call__(self, rover: "Rover") -> None:
         dx, dy = rover.heading.delta()
         new_x, new_y = rover.x + dx, rover.y + dy
@@ -283,27 +287,116 @@ LMLMLMLMM
 
 **Story ID**: NAV-INFRA-003.1
 
-**As a** developer **I want** obstacles to be registered in-memory at parse time **so that** no external obstacle service or database is needed.
+**As a** developer **I want** obstacle-stopped rovers to be recorded in DynamoDB with a distinct status and trigger an `ObstacleEncountered` event **so that** operators and downstream services can distinguish obstacle stops from normal completions without parsing output strings.
 
-**Architecture Reference**: [07-deployment.md](../../architecture/07-deployment.md) — single-process CLI, no persistence
+**Architecture Reference**: [07-deployment.md](../../architecture/07-deployment.md) — deployment topology; [09-architecture-decisions.md](../../architecture/09-architecture-decisions.md) — ADR-001; [11-risks-and-technical-debts.md](../../architecture/11-risks-and-technical-debts.md) — TD-1; [02-constraints.md](../../architecture/02-constraints.md) — DC-6
 
-**Scenarios:**
+---
 
-### SCENARIO 1: Obstacles are held in memory only
+### SCENARIO 1: Obstacle-stopped rover is written to DynamoDB with status OBSTACLE_STOPPED
 
 **Scenario ID**: NAV-INFRA-003.1-S1
 
 **GIVEN**
-* Obstacles are defined in the input
+* The `ExecuteCommands` Lambda is processing a rover that hits an obstacle at `(2, 2)`
 
 **WHEN**
-* The CLI processes the mission
+* `MoveForward` raises `ObstacleEncountered`
 
 **THEN**
-* Obstacles are stored in the `Plateau` object in memory
-* No file, database, or external service is used for obstacle storage
+* The Lambda updates the rover's DynamoDB record with `status=OBSTACLE_STOPPED`, `x=1`, `y=2`, `heading=E`
+* The `O:` prefix is applied by `OutputFormatter` only when the record is read back by `GetMissionResults`
+* The raw DynamoDB record uses the `status` field, not a string prefix
 
-No infrastructure changes. Obstacles are in-memory, registered at parse time.
+---
+
+### SCENARIO 2: ObstacleEncountered event is published to EventBridge
+
+**Scenario ID**: NAV-INFRA-003.1-S2
+
+**GIVEN**
+* The `ExecuteCommands` Lambda has written `status=OBSTACLE_STOPPED` to DynamoDB
+
+**WHEN**
+* The Lambda completes the rover's execution
+
+**THEN**
+* An `ObstacleEncountered` event is published to `MarsRoverEventBus`:
+  ```json
+  {
+    "source": "mars-rover.navigation",
+    "detail-type": "ObstacleEncountered",
+    "detail": {
+      "missionId": "abc123",
+      "roverIndex": 0,
+      "lastSafeX": 1,
+      "lastSafeY": 2,
+      "heading": "E",
+      "obstacleX": 2,
+      "obstacleY": 2
+    }
+  }
+  ```
+
+---
+
+### SCENARIO 3: GetMissionResults Lambda returns O: prefix for OBSTACLE_STOPPED rovers
+
+**Scenario ID**: NAV-INFRA-003.1-S3
+
+**GIVEN**
+* DynamoDB contains `SK=ROVER#0` with `status=OBSTACLE_STOPPED`, `x=1`, `y=2`, `heading=E`
+
+**WHEN**
+* `GetMissionResults` is called for the mission
+
+**THEN**
+* The response includes `"O:1 2 E"` for that rover
+* Rovers with `status=COMPLETED` are returned without the `O:` prefix
+
+---
+
+### SCENARIO 4: CloudWatch alarm fires when obstacle rate exceeds threshold
+
+**Scenario ID**: NAV-INFRA-003.1-S4
+
+**GIVEN**
+* A CloudWatch metric filter is defined on the `ExecuteCommands` log group matching `ObstacleEncountered` log events
+
+**WHEN**
+* More than 5 obstacle encounters occur within a 5-minute window
+
+**THEN**
+* The `HighObstacleRate` alarm transitions to `ALARM`
+* This may indicate a plateau configuration error or a data issue with obstacle coordinates
+* An SNS notification is sent to the ops team
+
+**Metric filter (SAM):**
+```yaml
+ObstacleEncounteredMetricFilter:
+  Type: AWS::Logs::MetricFilter
+  Properties:
+    LogGroupName: !Sub "/aws/lambda/${ExecuteCommandsFunction}"
+    FilterPattern: '{ $.event = "ObstacleEncountered" }'
+    MetricTransformations:
+      - MetricName: ObstacleEncounters
+        MetricNamespace: MarsRover
+        MetricValue: "1"
+
+HighObstacleRateAlarm:
+  Type: AWS::CloudWatch::Alarm
+  Properties:
+    AlarmName: HighObstacleRate
+    MetricName: ObstacleEncounters
+    Namespace: MarsRover
+    Statistic: Sum
+    Period: 300
+    EvaluationPeriods: 1
+    Threshold: 5
+    ComparisonOperator: GreaterThanThreshold
+    AlarmActions:
+      - !Ref OpsAlertTopic
+```
 
 ---
 
@@ -314,5 +407,9 @@ No infrastructure changes. Obstacles are in-memory, registered at parse time.
 - [ ] `MissionController` catches `ObstacleEncountered` and stops that rover's mission
 - [ ] `OutputFormatter` emits `O:` prefix for obstacle-stopped rovers
 - [ ] All obstacle unit tests pass (including mission-level stop test for NAV-STORY-003-S4)
+- [ ] `ExecuteCommands` Lambda writes `status=OBSTACLE_STOPPED` to DynamoDB on obstacle
+- [ ] `ObstacleEncountered` event published to `MarsRoverEventBus` with obstacle coordinates
+- [ ] `GetMissionResults` returns `O:` prefix for `OBSTACLE_STOPPED` rovers
+- [ ] `HighObstacleRate` CloudWatch alarm defined; fires when > 5 obstacles in 5 minutes
 - [ ] Existing boundary and navigation tests still pass (no regression)
 - [ ] `ruff`, `black`, and `isort` pass with no warnings

@@ -1,6 +1,12 @@
 # User Story Inventory — Mars Rover Kata
 
-Pareto-prioritized: the first 5 stories (~50% of total) deliver ~80% of the working system value.
+## Prioritization Note
+
+This backlog uses **value-weighted prioritization**, not a strict Pareto 80/20 split.
+
+The 5 Core stories represent 50% of the story count but deliver ~80% of the working system value. In a 10-story kata this is expected: the domain is small enough that there is no long tail of low-value stories to cut. Every story here earns its place. The 80/20 rule describes the *value ratio*, not the *story count ratio* — and that ratio holds.
+
+If this were a 50-story backlog, the Core tier would contain ~10 stories (20%). At 10 stories, 5 is the honest answer.
 
 ---
 
@@ -23,11 +29,15 @@ Pareto-prioritized: the first 5 stories (~50% of total) deliver ~80% of the work
 
 ## Pareto Split
 
-```
-🔴 Core (PLATEAU-STORY-001 → NAV-STORY-002)   ████████████████████  80% of system value
-🟡 Secondary (MISSION-STORY-001 → CLI-STORY-003)    ████░░░░░░░░░░░░░░░░  15% of system value
-🟢 Optional  (NAV-STORY-003 → NAV-STORY-004)    ██░░░░░░░░░░░░░░░░░░   5% of system value
-```
+The value distribution holds even though the story count split is 50/30/20, not 80/20:
+
+| Tier | Stories | Story count | Value delivered |
+|------|---------|-------------|-----------------|
+| 🔴 Core | PLATEAU-STORY-001 → NAV-STORY-002 | 5 (50%) | ~80% |
+| 🟡 Secondary | MISSION-STORY-001 → CLI-STORY-003 | 3 (30%) | ~15% |
+| 🟢 Optional | NAV-STORY-003 → NAV-STORY-004 | 2 (20%) | ~5% |
+
+The story count column and the value column measure different things. 50% of stories deliver 80% of the value — that asymmetry is the point. A strict 80/20 rule applied to story count would mean 2 Core stories, which would exclude `Navigate a rover` and `Report final positions`. That's wrong for a 10-story kata with no filler.
 
 ---
 

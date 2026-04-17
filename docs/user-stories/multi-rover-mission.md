@@ -126,6 +126,7 @@ class MissionController:
 - `MissionController` owns the command-string → command-object mapping; `InputParser` (CLI-STORY-001) produces raw strings, keeping parsing out of the application layer
 - `MoveForward` is instantiated once per plateau and reused across all rovers — safe because it holds no per-rover state
 - Sequential processing is explicit and documented (DC-4); no thread safety required
+- **Note:** The return type `list[Rover]` is the initial implementation. NAV-STORY-003 (obstacle detection) changes it to `list[tuple[Rover, bool]]` to carry the obstacle-stopped flag. Implement this version first, then extend in NAV-STORY-003.
 
 ### Unit tests — `tests/application/test_mission_controller.py`
 
@@ -227,27 +228,92 @@ Expected output:
 
 **Story ID**: MISSION-INFRA-001.1
 
-**As a** developer **I want** all rovers to run in the same single process sequentially **so that** no concurrency, queuing, or inter-process communication is needed.
+**As a** developer **I want** the multi-rover mission to be orchestrated by a Step Functions state machine **so that** each rover's execution is an independent Lambda invocation, failures are retried automatically, and the overall mission status is trackable.
 
-**Architecture Reference**: [07-deployment.md](../../architecture/07-deployment.md) — single-process CLI; [02-constraints.md](../../architecture/02-constraints.md) — DC-4 sequential processing; [11-risks-and-technical-debts.md](../../architecture/11-risks-and-technical-debts.md) — R-3
+**Architecture Reference**: [07-deployment.md](../../architecture/07-deployment.md) — deployment topology; [09-architecture-decisions.md](../../architecture/09-architecture-decisions.md) — ADR-001; [02-constraints.md](../../architecture/02-constraints.md) — DC-4; [11-risks-and-technical-debts.md](../../architecture/11-risks-and-technical-debts.md) — R-3
 
-**Scenarios:**
+---
 
-### SCENARIO 1: Sequential execution requires no concurrency infrastructure
+### SCENARIO 1: Step Functions state machine executes one Lambda per rover sequentially
 
 **Scenario ID**: MISSION-INFRA-001.1-S1
 
 **GIVEN**
-* Multiple rovers are in the mission
+* A Step Functions Express Workflow `MarsRoverMission` is defined
+* A mission with 2 rovers is submitted; DynamoDB contains `SK=METADATA` with `roverCount=2`, plus `SK=ROVER#0` and `SK=ROVER#1`
 
 **WHEN**
-* The mission runs
+* The state machine is started with `missionId=abc123`
 
 **THEN**
-* Rovers execute one at a time in a single thread
-* No message queue, thread pool, or async runtime is used
+* The state machine reads `roverCount` from the `SK=METADATA` record
+* It invokes `ExecuteCommands` for `ROVER#0`, waits for completion, then invokes it for `ROVER#1`
+* Both rovers complete and their final states are written to DynamoDB
+* The state machine execution status is `SUCCEEDED`
 
-No infrastructure changes. All rovers run in the same single process, sequentially.
+---
+
+### SCENARIO 2: MissionCompleted event is published when all rovers finish
+
+**Scenario ID**: MISSION-INFRA-001.1-S2
+
+**GIVEN**
+* The Step Functions state machine has successfully executed all rover Lambdas
+
+**WHEN**
+* The final state in the state machine runs
+
+**THEN**
+* A `MissionCompleted` event is published to `MarsRoverEventBus`
+* The event payload includes `missionId` and the count of rovers processed
+* Downstream consumers (e.g. a notification service) can subscribe to this event
+
+**EventBridge event shape:**
+```json
+{
+  "source": "mars-rover.mission",
+  "detail-type": "MissionCompleted",
+  "detail": {
+    "missionId": "abc123",
+    "roverCount": 2,
+    "completedAt": "2026-04-17T10:05:00Z"
+  }
+}
+```
+
+---
+
+### SCENARIO 3: Step Functions state machine is defined in template.yaml
+
+**Scenario ID**: MISSION-INFRA-001.1-S3
+
+**GIVEN**
+* A `statemachine/mission.asl.json` file defines the state machine in Amazon States Language
+
+**WHEN**
+* `sam deploy` is run
+
+**THEN**
+* The `MarsRoverMission` state machine is created in AWS Step Functions
+* It has an IAM role with `lambda:InvokeFunction` on `ExecuteCommandsFunction` and `events:PutEvents` on `MarsRoverEventBus`
+* The state machine type is `EXPRESS` (synchronous, low-latency)
+
+---
+
+### SCENARIO 4: CloudWatch alarm fires when the state machine execution fails
+
+**Scenario ID**: MISSION-INFRA-001.1-S4
+
+**GIVEN**
+* A CloudWatch alarm monitors `ExecutionsFailed` for the `MarsRoverMission` state machine
+
+**WHEN**
+* A state machine execution fails (e.g. Lambda timeout, DynamoDB error)
+
+**THEN**
+* The `MissionExecutionFailed` alarm transitions to `ALARM` within 1 minute
+* The failed execution ID and `missionId` are logged to CloudWatch Logs
+* The ops SNS topic receives a notification
 
 ---
 
@@ -256,5 +322,9 @@ No infrastructure changes. All rovers run in the same single process, sequential
 - [ ] `MissionController` implemented in `mars_rover/application/mission_controller.py`
 - [ ] Full kata two-rover test passes (MISSION-STORY-001-S4)
 - [ ] Rover independence test passes (MISSION-STORY-001-S2)
+- [ ] Step Functions `MarsRoverMission` state machine defined in `statemachine/mission.asl.json` and `template.yaml`
+- [ ] State machine invokes `ExecuteCommands` Lambda per rover sequentially
+- [ ] `MissionCompleted` event published to `MarsRoverEventBus` on success
+- [ ] `MissionExecutionFailed` CloudWatch alarm defined; fires on any execution failure
 - [ ] `ruff`, `black`, and `isort` pass with no warnings
 - [ ] `MissionController` does not import from `adapters/`

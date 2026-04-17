@@ -231,27 +231,102 @@ No UI impact. The operator can include `U` in any command string once the mappin
 
 **Story ID**: NAV-INFRA-004.1
 
-**As a** developer **I want** new commands to require no infrastructure changes **so that** extensibility is purely a code-level concern.
+**As a** developer **I want** new command types to be deployable by redeploying the Lambda package without any changes to DynamoDB, EventBridge rules, or CloudWatch alarms **so that** extensibility is a pure code-level concern with zero infrastructure impact.
 
-**Architecture Reference**: [07-deployment.md](../../architecture/07-deployment.md) — single-process CLI, no persistence
+**Architecture Reference**: [07-deployment.md](../../architecture/07-deployment.md) — deployment topology; [10-quality-requirements.md](../../architecture/10-quality-requirements.md) — QS-6; [04-solution-strategy.md](../../architecture/04-solution-strategy.md) — Command pattern
 
-**Scenarios:**
+---
 
-### SCENARIO 1: UTurn requires no external resources
+### SCENARIO 1: Adding UTurn requires only a Lambda redeployment — no infrastructure change
 
 **Scenario ID**: NAV-INFRA-004.1-S1
 
 **GIVEN**
-* `UTurn` is added to the system
+* `UTurn` has been added to `commands.py` and registered in `MissionController`
 
 **WHEN**
-* A rover executes a `U` command
+* `sam deploy` is run to update the Lambda package
 
 **THEN**
-* No file, database, network, or external service is involved
-* The command executes entirely in memory
+* Only the Lambda function code is updated
+* The DynamoDB table schema is unchanged
+* The EventBridge rules are unchanged
+* The CloudWatch alarms are unchanged
+* `template.yaml` has zero diff outside the Lambda function code reference
 
-No infrastructure changes.
+---
+
+### SCENARIO 2: ExecuteCommands Lambda processes a U command from DynamoDB correctly
+
+**Scenario ID**: NAV-INFRA-004.1-S2
+
+**GIVEN**
+* A rover record in DynamoDB has `PK=MISSION#abc123`, `SK=ROVER#0`, `x=2`, `y=2`, `heading=N`, `commands="U"`
+* The updated Lambda package includes `UTurn`
+
+**WHEN**
+* The `ExecuteCommands` Lambda processes the rover
+
+**THEN**
+* The domain `MissionController` executes `UTurn` in memory
+* The final DynamoDB record has `x=2`, `y=2`, `heading=S`, `status=COMPLETED`
+* The `GetMissionResults` Lambda returns `"2 2 S"` for that rover
+
+---
+
+### SCENARIO 3: Unknown command character is rejected at the API layer before Lambda invocation
+
+**Scenario ID**: NAV-INFRA-004.1-S3
+
+**GIVEN**
+* The `CreateMission` Lambda validates command strings via `InputParser`
+* `InputParser` has been extended to validate that every character in a command string is a registered command letter (requires updating `_parse_commands()` — new method not present in CLI-STORY-001)
+
+**WHEN**
+* An operator submits `"commands": "LMX"` (unknown character `X`)
+
+**THEN**
+* The Lambda returns HTTP 400: `{ "error": "Unknown command 'X'", "field": "rovers[0].commands" }`
+* No DynamoDB write occurs
+* No Lambda invocation for `ExecuteCommands` is triggered
+* The validation error is logged and counted by the `MarsRover/ValidationErrors` metric
+
+**Required `InputParser` extension:**
+```python
+# In InputParser — valid commands are injected so the set can be extended
+# without modifying InputParser itself (open/closed)
+_DEFAULT_VALID_COMMANDS = frozenset("LRM")
+
+class InputParser:
+    def __init__(self, valid_commands: frozenset[str] = _DEFAULT_VALID_COMMANDS) -> None:
+        self._valid_commands = valid_commands
+
+    def _parse_commands(self, line: str) -> str:
+        unknown = [ch for ch in line if ch not in self._valid_commands]
+        if unknown:
+            raise ValueError(
+                f"Unknown command(s) {unknown!r} in command string: {line!r}"
+            )
+        return line
+```
+
+When `UTurn` is registered, the caller constructs `InputParser(valid_commands=frozenset("LRMU"))`. `InputParser` itself is unchanged.
+
+---
+
+### SCENARIO 4: CloudWatch dashboard shows command distribution across missions
+
+**Scenario ID**: NAV-INFRA-004.1-S4
+
+**GIVEN**
+* The `ExecuteCommands` Lambda logs each command string length and character distribution
+
+**WHEN**
+* The `MarsRoverOps` CloudWatch dashboard is opened
+
+**THEN**
+* A widget shows the average command string length per mission over the last 24 hours
+* This provides observability into how operators are using the system and whether new commands (like `U`) are being adopted
 
 ---
 
@@ -262,4 +337,7 @@ No infrastructure changes.
 - [ ] All 6 `UTurn` unit tests pass
 - [ ] Zero changes to `Rover`, `Plateau`, `Heading`, or `OutputFormatter`
 - [ ] All existing tests still pass (no regression)
+- [ ] `sam deploy` after adding `UTurn` produces zero diff in `template.yaml` outside Lambda code
+- [ ] `ExecuteCommands` Lambda processes `U` command from DynamoDB and writes `heading=S` for a north-facing rover
+- [ ] Unknown command character rejected at API layer with HTTP 400 before any Lambda invocation
 - [ ] `ruff`, `black`, and `isort` pass with no warnings

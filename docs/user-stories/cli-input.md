@@ -193,6 +193,8 @@ if __name__ == "__main__":
     main()
 ```
 
+> **Note:** This entry point is the initial implementation. NAV-STORY-003 (obstacle detection) updates `MissionController.run()` to return `list[tuple[Rover, bool]]` and updates this loop accordingly — see `obstacle-detection.md`.
+
 ### Unit tests — `tests/adapters/test_input_parser.py`
 
 ```python
@@ -291,39 +293,126 @@ EOF
 
 **Story ID**: CLI-INFRA-001.1
 
-**As a** developer **I want** the CLI to read from stdin and write to stdout within a single Python process **so that** no infrastructure beyond a Python runtime is needed.
+**As a** developer **I want** the `CreateMission` Lambda to be the entry point for submitting mission input **so that** operators interact with the system via an API Gateway endpoint rather than a CLI pipe.
 
-**Architecture Reference**: [07-deployment.md](../../architecture/07-deployment.md) — single-process CLI, no persistence; [02-constraints.md](../../architecture/02-constraints.md) — TC-3
+**Architecture Reference**: [07-deployment.md](../../architecture/07-deployment.md) — deployment topology; [09-architecture-decisions.md](../../architecture/09-architecture-decisions.md) — ADR-001; [02-constraints.md](../../architecture/02-constraints.md) — TC-1, TC-3
 
-**Scenarios:**
+---
 
-### SCENARIO 1: CLI requires only a Python runtime
+### SCENARIO 1: POST /missions creates a mission record and returns a mission ID
 
 **Scenario ID**: CLI-INFRA-001.1-S1
 
 **GIVEN**
-* A machine with Python 3.12+ installed
+* An API Gateway `POST /missions` route targets the `CreateMission` Lambda
+* This is the same `CreateMission` Lambda introduced in PLATEAU-INFRA-001.1; this story covers its full API contract
 
 **WHEN**
-* The CLI is invoked
+* An operator sends:
+  ```http
+  POST /missions
+  Content-Type: application/json
+
+  {
+    "plateau": { "width": 5, "height": 5 },
+    "rovers": [
+      { "x": 1, "y": 2, "heading": "N", "commands": "LMLMLMLMM" },
+      { "x": 3, "y": 3, "heading": "E", "commands": "MMRMMRMRRM" }
+    ]
+  }
+  ```
 
 **THEN**
-* No external service, database, message broker, or container is required
-* stdin and stdout are the only I/O channels
+* The Lambda writes a plateau record (`SK=PLATEAU`), a metadata record (`SK=METADATA` with `roverCount=2`), and one rover record per rover (`SK=ROVER#0`, `SK=ROVER#1`) to DynamoDB — all with `commands` stored on each rover record
+* Returns HTTP 201 with `{ "missionId": "<uuid>" }`
+* Publishes a `MissionCreated` event to `MarsRoverEventBus`
 
-**Development setup:**
-```bash
-pip install -e ".[dev]"
-pytest
+---
+
+### SCENARIO 2: CreateMission Lambda validates input and returns 400 on bad data
+
+**Scenario ID**: CLI-INFRA-001.1-S2
+
+**GIVEN**
+* The `CreateMission` Lambda uses `InputParser` to validate the request body
+
+**WHEN**
+* An operator sends a rover with `"heading": "X"` (invalid)
+
+**THEN**
+* The Lambda returns HTTP 400 with `{ "error": "Invalid heading 'X'. Must be one of N, E, S, W." }`
+* No DynamoDB writes occur
+* No event is published
+* The error is logged to CloudWatch Logs at `WARN` level
+
+---
+
+### SCENARIO 3: Lambda is deployed with API Gateway via SAM
+
+**Scenario ID**: CLI-INFRA-001.1-S3
+
+**GIVEN**
+* `template.yaml` defines the `CreateMission` Lambda with an API Gateway event
+
+**WHEN**
+* `sam deploy` is run
+
+**THEN**
+* The Lambda is deployed with `POST /missions` route on the API Gateway
+* The Lambda has `dynamodb:PutItem` on `MarsRoverMissions` and `events:PutEvents` on `MarsRoverEventBus`
+* The API Gateway URL is printed as a CloudFormation output
+
+**SAM resource snippet:**
+```yaml
+CreateMissionFunction:
+  Type: AWS::Serverless::Function
+  Properties:
+    Handler: mars_rover.handlers.create_mission.handler
+    Runtime: python3.12
+    Events:
+      CreateMission:
+        Type: Api
+        Properties:
+          Path: /missions
+          Method: POST
+    Policies:
+      - Statement:
+          - Effect: Allow
+            Action:
+              - dynamodb:PutItem
+            Resource: !GetAtt MarsRoverMissionsTable.Arn
+          - Effect: Allow
+            Action:
+              - events:PutEvents
+            Resource: !GetAtt MarsRoverEventBus.Arn
 ```
+
+---
+
+### SCENARIO 4: CloudWatch alarm fires when CreateMission error rate exceeds 1%
+
+**Scenario ID**: CLI-INFRA-001.1-S4
+
+**GIVEN**
+* A CloudWatch alarm monitors the `CreateMission` Lambda error rate
+
+**WHEN**
+* More than 1% of invocations in a 5-minute window result in errors
+
+**THEN**
+* The `CreateMissionHighErrorRate` alarm transitions to `ALARM`
+* The alarm uses the `Errors / Invocations` metric math expression
+* An SNS notification is sent to the ops team
 
 ---
 
 ## Definition of Done
 
 - [ ] `InputParser` implemented in `mars_rover/adapters/input_parser.py`
-- [ ] `__main__.py` entry point wires parser → controller → formatter
 - [ ] All parser unit tests pass
-- [ ] `python -m mars_rover < input.txt` produces correct output end-to-end
-- [ ] Malformed input exits with code 1 and prints to stderr (covered in CLI-STORY-003)
+- [ ] `CreateMission` Lambda writes plateau + rover records to DynamoDB and returns `missionId`
+- [ ] Lambda returns HTTP 400 with descriptive message on invalid input (no DynamoDB write)
+- [ ] `POST /missions` API Gateway route defined in `template.yaml`
+- [ ] `MissionCreated` event published to `MarsRoverEventBus` on success
+- [ ] `CreateMissionHighErrorRate` CloudWatch alarm defined; fires when error rate > 1%
 - [ ] `ruff`, `black`, and `isort` pass with no warnings
