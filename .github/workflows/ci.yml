@@ -13,10 +13,9 @@ on:
       - "mars_rover/**"
       - "tests/**"
       - "Dockerfile"
-      - "docker-compose.yml"
+      - "requirements.txt"
       - "pyproject.toml"
       - ".github/workflows/**"
-      - "Makefile"
   pull_request:
     branches:
       - main
@@ -25,10 +24,9 @@ on:
       - "mars_rover/**"
       - "tests/**"
       - "Dockerfile"
-      - "docker-compose.yml"
+      - "requirements.txt"
       - "pyproject.toml"
       - ".github/workflows/**"
-      - "Makefile"
 
 permissions:
   contents: read
