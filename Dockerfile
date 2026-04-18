@@ -29,7 +29,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 FROM deps AS lint
 
 COPY mars_rover/ ./mars_rover/
-#COPY tests/ ./tests/
+COPY tests/ ./tests/
 
 RUN echo "Running code quality checks..." && \
     black --check --diff mars_rover/ tests/ && \
@@ -47,7 +47,7 @@ RUN echo "Running code quality checks..." && \
 FROM deps AS test
 
 COPY mars_rover/ ./mars_rover/
-#COPY tests/ ./tests/
+COPY tests/ ./tests/
 
 RUN chown -R appuser:appuser /app
 
