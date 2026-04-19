@@ -287,116 +287,85 @@ LMLMLMLMM
 
 **Story ID**: NAV-INFRA-003.1
 
-**As a** developer **I want** obstacle-stopped rovers to be recorded in DynamoDB with a distinct status and trigger an `ObstacleEncountered` event **so that** operators and downstream services can distinguish obstacle stops from normal completions without parsing output strings.
+**As a** developer **I want** obstacle detection functionality to be containerized and testable **so that** obstacle handling works consistently across environments.
 
-**Architecture Reference**: [07-deployment.md](../../architecture/07-deployment.md) — deployment topology; [09-architecture-decisions.md](../../architecture/09-architecture-decisions.md) — ADR-001; [11-risks-and-technical-debts.md](../../architecture/11-risks-and-technical-debts.md) — TD-1; [02-constraints.md](../../architecture/02-constraints.md) — DC-6
+**Architecture Reference**: [07-deployment.md](../../architecture/07-deployment.md) — deployment topology; [11-risks-and-technical-debts.md](../../architecture/11-risks-and-technical-debts.md) — TD-1; [02-constraints.md](../../architecture/02-constraints.md) — DC-6
 
 ---
 
-### SCENARIO 1: Obstacle-stopped rover is written to DynamoDB with status OBSTACLE_STOPPED
+### SCENARIO 1: Container processes obstacle-stopped rovers and marks output correctly
 
 **Scenario ID**: NAV-INFRA-003.1-S1
 
 **GIVEN**
-* The `ExecuteCommands` Lambda is processing a rover that hits an obstacle at `(2, 2)`
+* The Docker container includes obstacle detection logic
+* Input contains obstacle coordinates and a rover that will encounter an obstacle
 
 **WHEN**
-* `MoveForward` raises `ObstacleEncountered`
+* The container processes the mission
 
 **THEN**
-* The Lambda updates the rover's DynamoDB record with `status=OBSTACLE_STOPPED`, `x=1`, `y=2`, `heading=E`
-* The `O:` prefix is applied by `OutputFormatter` only when the record is read back by `GetMissionResults`
-* The raw DynamoDB record uses the `status` field, not a string prefix
+* Obstacle-stopped rover is marked with "O:" prefix in output
+* Final position reflects the last safe position before obstacle
+* Container completes successfully with exit code 0
+* Other rovers continue processing normally
 
 ---
 
-### SCENARIO 2: ObstacleEncountered event is published to EventBridge
+### SCENARIO 2: Container logs obstacle encounters to stderr with structured metadata
 
 **Scenario ID**: NAV-INFRA-003.1-S2
 
 **GIVEN**
-* The `ExecuteCommands` Lambda has written `status=OBSTACLE_STOPPED` to DynamoDB
+* The Docker container includes obstacle logging
+* A rover encounters an obstacle during movement
 
 **WHEN**
-* The Lambda completes the rover's execution
+* The container processes the obstacle encounter
 
 **THEN**
-* An `ObstacleEncountered` event is published to `MarsRoverEventBus`:
-  ```json
-  {
-    "source": "mars-rover.navigation",
-    "detail-type": "ObstacleEncountered",
-    "detail": {
-      "missionId": "abc123",
-      "roverIndex": 0,
-      "lastSafeX": 1,
-      "lastSafeY": 2,
-      "heading": "E",
-      "obstacleX": 2,
-      "obstacleY": 2
-    }
-  }
-  ```
+* Structured log is written to stderr with obstacle details
+* Log includes rover position, heading, and obstacle coordinates
+* Container continues processing remaining rovers
+* No execution stops due to obstacle encounter
 
 ---
 
-### SCENARIO 3: GetMissionResults Lambda returns O: prefix for OBSTACLE_STOPPED rovers
+### SCENARIO 3: Dockerfile builds with obstacle detection dependencies
 
 **Scenario ID**: NAV-INFRA-003.1-S3
 
 **GIVEN**
-* DynamoDB contains `SK=ROVER#0` with `status=OBSTACLE_STOPPED`, `x=1`, `y=2`, `heading=E`
+* The obstacle detection logic is implemented in domain code
+* The Dockerfile includes all necessary domain and application layers
 
 **WHEN**
-* `GetMissionResults` is called for the mission
+* `docker build -t mars-rover .` is executed
 
 **THEN**
-* The response includes `"O:1 2 E"` for that rover
-* Rovers with `status=COMPLETED` are returned without the `O:` prefix
+* The build includes obstacle detection code and dependencies
+* Plateau obstacle checking is available in the container
+* The container can handle ObstacleEncountered exceptions correctly
+* Build completes without errors
 
 ---
 
-### SCENARIO 4: CloudWatch alarm fires when obstacle rate exceeds threshold
+### SCENARIO 4: Test suite validates obstacle detection inside container
 
 **Scenario ID**: NAV-INFRA-003.1-S4
 
 **GIVEN**
-* A CloudWatch metric filter is defined on the `ExecuteCommands` log group matching `ObstacleEncountered` log events
+* Test files exist for obstacle detection and handling functionality
+* The Docker container includes pytest
 
 **WHEN**
-* More than 5 obstacle encounters occur within a 5-minute window
+* `docker run --rm mars-rover pytest tests/ -k "obstacle" -v` is executed
 
 **THEN**
-* The `HighObstacleRate` alarm transitions to `ALARM`
-* This may indicate a plateau configuration error or a data issue with obstacle coordinates
-* An SNS notification is sent to the ops team
-
-**Metric filter (SAM):**
-```yaml
-ObstacleEncounteredMetricFilter:
-  Type: AWS::Logs::MetricFilter
-  Properties:
-    LogGroupName: !Sub "/aws/lambda/${ExecuteCommandsFunction}"
-    FilterPattern: '{ $.event = "ObstacleEncountered" }'
-    MetricTransformations:
-      - MetricName: ObstacleEncounters
-        MetricNamespace: MarsRover
-        MetricValue: "1"
-
-HighObstacleRateAlarm:
-  Type: AWS::CloudWatch::Alarm
-  Properties:
-    AlarmName: HighObstacleRate
-    MetricName: ObstacleEncounters
-    Namespace: MarsRover
-    Statistic: Sum
-    Period: 300
-    EvaluationPeriods: 1
-    Threshold: 5
-    ComparisonOperator: GreaterThanThreshold
-    AlarmActions:
-      - !Ref OpsAlertTopic
-```
+* All obstacle detection tests run inside the container
+* Tests validate obstacle stopping and output formatting
+* pytest discovers and executes all obstacle-related tests
+* Container exits with code 0 on test success
 
 ---
 
@@ -407,9 +376,9 @@ HighObstacleRateAlarm:
 - [ ] `MissionController` catches `ObstacleEncountered` and stops that rover's mission
 - [ ] `OutputFormatter` emits `O:` prefix for obstacle-stopped rovers
 - [ ] All obstacle unit tests pass (including mission-level stop test for NAV-STORY-003-S4)
-- [ ] `ExecuteCommands` Lambda writes `status=OBSTACLE_STOPPED` to DynamoDB on obstacle
-- [ ] `ObstacleEncountered` event published to `MarsRoverEventBus` with obstacle coordinates
-- [ ] `GetMissionResults` returns `O:` prefix for `OBSTACLE_STOPPED` rovers
-- [ ] `HighObstacleRate` CloudWatch alarm defined; fires when > 5 obstacles in 5 minutes
+- [ ] Container processes obstacle-stopped rovers and marks output correctly
+- [ ] Container logs obstacle encounters to stderr with structured metadata
+- [ ] Dockerfile builds successfully with obstacle detection dependencies
+- [ ] Test suite runs inside container and validates obstacle detection
 - [ ] Existing boundary and navigation tests still pass (no regression)
 - [ ] `ruff`, `black`, and `isort` pass with no warnings

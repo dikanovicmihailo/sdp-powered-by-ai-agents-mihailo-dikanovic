@@ -1,7 +1,10 @@
 [project]
-name = "sdp-course"
+name = "mars_rover"
 version = "0.1.0"
 requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
 
 [tool.black]
 line-length = 88

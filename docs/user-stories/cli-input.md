@@ -293,116 +293,85 @@ EOF
 
 **Story ID**: CLI-INFRA-001.1
 
-**As a** developer **I want** the `CreateMission` Lambda to be the entry point for submitting mission input **so that** operators interact with the system via an API Gateway endpoint rather than a CLI pipe.
+**As a** developer **I want** the CLI input parsing functionality to be containerized and testable **so that** input validation works consistently across environments.
 
-**Architecture Reference**: [07-deployment.md](../../architecture/07-deployment.md) — deployment topology; [09-architecture-decisions.md](../../architecture/09-architecture-decisions.md) — ADR-001; [02-constraints.md](../../architecture/02-constraints.md) — TC-1, TC-3
+**Architecture Reference**: [07-deployment.md](../../architecture/07-deployment.md) — deployment topology; [02-constraints.md](../../architecture/02-constraints.md) — TC-1, TC-3
 
 ---
 
-### SCENARIO 1: POST /missions creates a mission record and returns a mission ID
+### SCENARIO 1: Container processes stdin input and validates format
 
 **Scenario ID**: CLI-INFRA-001.1-S1
 
 **GIVEN**
-* An API Gateway `POST /missions` route targets the `CreateMission` Lambda
-* This is the same `CreateMission` Lambda introduced in PLATEAU-INFRA-001.1; this story covers its full API contract
+* The Docker container is built with the CLI input parser
+* A valid input file exists with plateau and rover data
 
 **WHEN**
-* An operator sends:
-  ```http
-  POST /missions
-  Content-Type: application/json
-
-  {
-    "plateau": { "width": 5, "height": 5 },
-    "rovers": [
-      { "x": 1, "y": 2, "heading": "N", "commands": "LMLMLMLMM" },
-      { "x": 3, "y": 3, "heading": "E", "commands": "MMRMMRMRRM" }
-    ]
-  }
-  ```
+* `echo "5 5\n1 2 N\nLMLMLMLMM" | docker run -i --rm mars-rover` is executed
 
 **THEN**
-* The Lambda writes a plateau record (`SK=PLATEAU`), a metadata record (`SK=METADATA` with `roverCount=2`), and one rover record per rover (`SK=ROVER#0`, `SK=ROVER#1`) to DynamoDB — all with `commands` stored on each rover record
-* Returns HTTP 201 with `{ "missionId": "<uuid>" }`
-* Publishes a `MissionCreated` event to `MarsRoverEventBus`
+* The container reads from stdin successfully
+* Input parsing validates the plateau dimensions and rover position
+* The container processes the input without errors
+* Output is written to stdout
 
 ---
 
-### SCENARIO 2: CreateMission Lambda validates input and returns 400 on bad data
+### SCENARIO 2: Container validates input and logs errors to stderr
 
 **Scenario ID**: CLI-INFRA-001.1-S2
 
 **GIVEN**
-* The `CreateMission` Lambda uses `InputParser` to validate the request body
+* The Docker container includes input validation logic
+* Invalid input with bad heading is provided
 
 **WHEN**
-* An operator sends a rover with `"heading": "X"` (invalid)
+* `echo "5 5\n1 2 X\nM" | docker run -i --rm mars-rover` is executed
 
 **THEN**
-* The Lambda returns HTTP 400 with `{ "error": "Invalid heading 'X'. Must be one of N, E, S, W." }`
-* No DynamoDB writes occur
-* No event is published
-* The error is logged to CloudWatch Logs at `WARN` level
+* The container detects the invalid heading "X"
+* Error message is logged to stderr with descriptive text
+* Container exits with non-zero exit code
+* No processing of invalid data occurs
 
 ---
 
-### SCENARIO 3: Lambda is deployed with API Gateway via SAM
+### SCENARIO 3: Dockerfile builds with input parsing dependencies
 
 **Scenario ID**: CLI-INFRA-001.1-S3
 
 **GIVEN**
-* `template.yaml` defines the `CreateMission` Lambda with an API Gateway event
+* The `requirements.txt` includes all necessary parsing dependencies
+* The Dockerfile copies the input parser code
 
 **WHEN**
-* `sam deploy` is run
+* `docker build -t mars-rover .` is executed
 
 **THEN**
-* The Lambda is deployed with `POST /missions` route on the API Gateway
-* The Lambda has `dynamodb:PutItem` on `MarsRoverMissions` and `events:PutEvents` on `MarsRoverEventBus`
-* The API Gateway URL is printed as a CloudFormation output
-
-**SAM resource snippet:**
-```yaml
-CreateMissionFunction:
-  Type: AWS::Serverless::Function
-  Properties:
-    Handler: mars_rover.handlers.create_mission.handler
-    Runtime: python3.12
-    Events:
-      CreateMission:
-        Type: Api
-        Properties:
-          Path: /missions
-          Method: POST
-    Policies:
-      - Statement:
-          - Effect: Allow
-            Action:
-              - dynamodb:PutItem
-            Resource: !GetAtt MarsRoverMissionsTable.Arn
-          - Effect: Allow
-            Action:
-              - events:PutEvents
-            Resource: !GetAtt MarsRoverEventBus.Arn
-```
+* The build includes `mars_rover/adapters/input_parser.py`
+* All dependencies for input validation are installed
+* The container can import and use the InputParser class
+* Build completes without dependency errors
 
 ---
 
-### SCENARIO 4: CloudWatch alarm fires when CreateMission error rate exceeds 1%
+### SCENARIO 4: Test suite validates input parsing inside container
 
 **Scenario ID**: CLI-INFRA-001.1-S4
 
 **GIVEN**
-* A CloudWatch alarm monitors the `CreateMission` Lambda error rate
+* Test files exist for input parser functionality
+* The Docker container includes pytest
 
 **WHEN**
-* More than 1% of invocations in a 5-minute window result in errors
+* `docker run --rm mars-rover pytest tests/adapters/test_input_parser.py -v` is executed
 
 **THEN**
-* The `CreateMissionHighErrorRate` alarm transitions to `ALARM`
-* The alarm uses the `Errors / Invocations` metric math expression
-* An SNS notification is sent to the ops team
+* All input parser tests run inside the container
+* Tests validate plateau parsing, rover parsing, and error handling
+* pytest discovers and executes all parser-related tests
+* Container exits with code 0 on test success
 
 ---
 
@@ -410,9 +379,8 @@ CreateMissionFunction:
 
 - [ ] `InputParser` implemented in `mars_rover/adapters/input_parser.py`
 - [ ] All parser unit tests pass
-- [ ] `CreateMission` Lambda writes plateau + rover records to DynamoDB and returns `missionId`
-- [ ] Lambda returns HTTP 400 with descriptive message on invalid input (no DynamoDB write)
-- [ ] `POST /missions` API Gateway route defined in `template.yaml`
-- [ ] `MissionCreated` event published to `MarsRoverEventBus` on success
-- [ ] `CreateMissionHighErrorRate` CloudWatch alarm defined; fires when error rate > 1%
+- [ ] Container processes stdin input and validates format correctly
+- [ ] Container logs validation errors to stderr with descriptive messages
+- [ ] Dockerfile builds successfully with input parsing dependencies
+- [ ] Test suite runs inside container and validates input parsing
 - [ ] `ruff`, `black`, and `isort` pass with no warnings

@@ -228,92 +228,85 @@ Expected output:
 
 **Story ID**: MISSION-INFRA-001.1
 
-**As a** developer **I want** the multi-rover mission to be orchestrated by a Step Functions state machine **so that** each rover's execution is an independent Lambda invocation, failures are retried automatically, and the overall mission status is trackable.
+**As a** developer **I want** multi-rover mission functionality to be containerized and testable **so that** parallel rover processing works consistently across environments.
 
-**Architecture Reference**: [07-deployment.md](../../architecture/07-deployment.md) — deployment topology; [09-architecture-decisions.md](../../architecture/09-architecture-decisions.md) — ADR-001; [02-constraints.md](../../architecture/02-constraints.md) — DC-4; [11-risks-and-technical-debts.md](../../architecture/11-risks-and-technical-debts.md) — R-3
+**Architecture Reference**: [07-deployment.md](../../architecture/07-deployment.md) — deployment topology; [04-solution-strategy.md](../../architecture/04-solution-strategy.md) — Hexagonal architecture
 
 ---
 
-### SCENARIO 1: Step Functions state machine executes one Lambda per rover sequentially
+### SCENARIO 1: Container processes multiple rovers sequentially and outputs results in order
 
 **Scenario ID**: MISSION-INFRA-001.1-S1
 
 **GIVEN**
-* A Step Functions Express Workflow `MarsRoverMission` is defined
-* A mission with 2 rovers is submitted; DynamoDB contains `SK=METADATA` with `roverCount=2`, plus `SK=ROVER#0` and `SK=ROVER#1`
+* The Docker container includes multi-rover mission logic
+* Input contains plateau and multiple rover definitions with commands
 
 **WHEN**
-* The state machine is started with `missionId=abc123`
+* The container processes the complete mission
 
 **THEN**
-* The state machine reads `roverCount` from the `SK=METADATA` record
-* It invokes `ExecuteCommands` for `ROVER#0`, waits for completion, then invokes it for `ROVER#1`
-* Both rovers complete and their final states are written to DynamoDB
-* The state machine execution status is `SUCCEEDED`
+* Each rover is processed sequentially using the mission controller
+* Final positions are output in deployment order
+* All rovers complete their missions independently
+* Container exits with code 0 on successful completion
 
 ---
 
-### SCENARIO 2: MissionCompleted event is published when all rovers finish
+### SCENARIO 2: Container handles rover failures gracefully in multi-rover missions
 
 **Scenario ID**: MISSION-INFRA-001.1-S2
 
 **GIVEN**
-* The Step Functions state machine has successfully executed all rover Lambdas
+* The Docker container processes a mission with multiple rovers
+* One rover encounters an error or obstacle during execution
 
 **WHEN**
-* The final state in the state machine runs
+* The container processes all rovers
 
 **THEN**
-* A `MissionCompleted` event is published to `MarsRoverEventBus`
-* The event payload includes `missionId` and the count of rovers processed
-* Downstream consumers (e.g. a notification service) can subscribe to this event
-
-**EventBridge event shape:**
-```json
-{
-  "source": "mars-rover.mission",
-  "detail-type": "MissionCompleted",
-  "detail": {
-    "missionId": "abc123",
-    "roverCount": 2,
-    "completedAt": "2026-04-17T10:05:00Z"
-  }
-}
-```
+* Failed rover is handled appropriately (obstacle prefix, error logging)
+* Other rovers continue processing normally
+* Mission completes with all rover results
+* Container exits with appropriate status code
 
 ---
 
-### SCENARIO 3: Step Functions state machine is defined in template.yaml
+### SCENARIO 3: Dockerfile builds with mission controller dependencies
 
 **Scenario ID**: MISSION-INFRA-001.1-S3
 
 **GIVEN**
-* A `statemachine/mission.asl.json` file defines the state machine in Amazon States Language
+* The mission controller logic is implemented in application layer
+* The Dockerfile includes all necessary application and domain code
 
 **WHEN**
-* `sam deploy` is run
+* `docker build -t mars-rover .` is executed
 
 **THEN**
-* The `MarsRoverMission` state machine is created in AWS Step Functions
-* It has an IAM role with `lambda:InvokeFunction` on `ExecuteCommandsFunction` and `events:PutEvents` on `MarsRoverEventBus`
-* The state machine type is `EXPRESS` (synchronous, low-latency)
+* The build includes mission controller code and dependencies
+* Multi-rover processing logic is available in the container
+* The container can coordinate multiple rover missions
+* Build completes without errors
 
 ---
 
-### SCENARIO 4: CloudWatch alarm fires when the state machine execution fails
+### SCENARIO 4: Test suite validates multi-rover functionality inside container
 
 **Scenario ID**: MISSION-INFRA-001.1-S4
 
 **GIVEN**
-* A CloudWatch alarm monitors `ExecutionsFailed` for the `MarsRoverMission` state machine
+* Test files exist for multi-rover mission functionality
+* The Docker container includes pytest
 
 **WHEN**
-* A state machine execution fails (e.g. Lambda timeout, DynamoDB error)
+* `docker run --rm mars-rover pytest tests/ -k "mission" -v` is executed
 
 **THEN**
-* The `MissionExecutionFailed` alarm transitions to `ALARM` within 1 minute
-* The failed execution ID and `missionId` are logged to CloudWatch Logs
-* The ops SNS topic receives a notification
+* All multi-rover mission tests run inside the container
+* Tests validate rover independence and sequential processing
+* pytest discovers and executes all mission-related tests
+* Container exits with code 0 on test success
 
 ---
 
@@ -322,9 +315,9 @@ Expected output:
 - [ ] `MissionController` implemented in `mars_rover/application/mission_controller.py`
 - [ ] Full kata two-rover test passes (MISSION-STORY-001-S4)
 - [ ] Rover independence test passes (MISSION-STORY-001-S2)
-- [ ] Step Functions `MarsRoverMission` state machine defined in `statemachine/mission.asl.json` and `template.yaml`
-- [ ] State machine invokes `ExecuteCommands` Lambda per rover sequentially
-- [ ] `MissionCompleted` event published to `MarsRoverEventBus` on success
-- [ ] `MissionExecutionFailed` CloudWatch alarm defined; fires on any execution failure
+- [ ] Container processes multiple rovers sequentially and outputs results in order
+- [ ] Container handles rover failures gracefully in multi-rover missions
+- [ ] Dockerfile builds successfully with mission controller dependencies
+- [ ] Test suite runs inside container and validates multi-rover functionality
 - [ ] `ruff`, `black`, and `isort` pass with no warnings
 - [ ] `MissionController` does not import from `adapters/`
