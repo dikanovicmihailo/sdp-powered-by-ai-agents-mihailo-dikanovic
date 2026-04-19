@@ -25,3 +25,21 @@ class TestOutputFormatter(unittest.TestCase):
 
         # THEN: The returned string is "1 3 N"
         self.assertEqual(result, "1 3 N")
+
+    def test_cli_story_002_s2_given_all_headings_when_format_then_correct_output(
+        self,
+    ):
+        # GIVEN: Rovers at origin with each cardinal heading
+        formatter = OutputFormatter()
+        cases = [
+            (Heading.N, "0 0 N"),
+            (Heading.E, "0 0 E"),
+            (Heading.S, "0 0 S"),
+            (Heading.W, "0 0 W"),
+        ]
+
+        # WHEN: format is called for each
+        # THEN: Each returns the correct space-separated string
+        for heading, expected in cases:
+            with self.subTest(heading=heading):
+                self.assertEqual(formatter.format(Rover(0, 0, heading)), expected)
