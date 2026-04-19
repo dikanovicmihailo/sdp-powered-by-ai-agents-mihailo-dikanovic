@@ -15,3 +15,13 @@ class TestOutputFormatter(unittest.TestCase):
 
         # THEN: Returns "5 1 E"
         self.assertEqual(result, "5 1 E")
+
+    def test_cli_story_002_s1_given_rover_at_1_3_n_when_format_then_returns_1_3_n(self):
+        # GIVEN: A rover ends at x=1, y=3, heading=N
+        rover = Rover(1, 3, Heading.N)
+
+        # WHEN: OutputFormatter.format(rover) is called
+        result = OutputFormatter().format(rover)
+
+        # THEN: The returned string is "1 3 N"
+        self.assertEqual(result, "1 3 N")
