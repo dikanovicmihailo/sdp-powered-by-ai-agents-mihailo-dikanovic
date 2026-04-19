@@ -16,3 +16,17 @@ class TestRoverInitialState(unittest.TestCase):
         self.assertEqual(rover.x, 1)
         self.assertEqual(rover.y, 2)
         self.assertEqual(rover.heading, Heading.N)
+
+
+class TestRoverAllHeadings(unittest.TestCase):
+    def test_rover_s2_given_any_cardinal_heading_when_constructed_then_stored_correctly(
+        self,
+    ):
+        # GIVEN: Any valid heading (N, E, S, W)
+        from mars_rover.domain.heading import Heading
+        from mars_rover.domain.rover import Rover
+
+        # WHEN / THEN: Each heading is stored correctly
+        for heading in Heading:
+            rover = Rover(0, 0, heading)
+            self.assertEqual(rover.heading, heading)
