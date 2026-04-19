@@ -8,3 +8,6 @@ class Rover:
     x: int
     y: int
     heading: Heading
+
+    def execute(self, command) -> None:
+        command(self)
