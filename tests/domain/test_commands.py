@@ -1,6 +1,6 @@
 import unittest
 
-from mars_rover.domain.commands import TurnLeft
+from mars_rover.domain.commands import TurnLeft, TurnRight
 from mars_rover.domain.heading import Heading
 from mars_rover.domain.rover import Rover
 
@@ -17,3 +17,17 @@ class TestTurnLeft(unittest.TestCase):
         self.assertEqual(rover.heading, Heading.W)
         self.assertEqual(rover.x, 2)
         self.assertEqual(rover.y, 3)
+
+
+class TestTurnRight(unittest.TestCase):
+    def test_nav_story_001_s2_turn_right_from_north_gives_east_position_unchanged(self):
+        # GIVEN: A rover at (1, 2, N)
+        rover = Rover(1, 2, Heading.N)
+
+        # WHEN: TurnRight() is called
+        TurnRight()(rover)
+
+        # THEN: heading == E, position unchanged
+        self.assertEqual(rover.heading, Heading.E)
+        self.assertEqual(rover.x, 1)
+        self.assertEqual(rover.y, 2)

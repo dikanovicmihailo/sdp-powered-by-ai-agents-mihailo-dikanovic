@@ -9,3 +9,8 @@ if TYPE_CHECKING:
 class TurnLeft:
     def __call__(self, rover: Rover) -> None:
         rover.heading = rover.heading.turn_left()
+
+
+class TurnRight:
+    def __call__(self, rover: Rover) -> None:
+        rover.heading = rover.heading.turn_right()
