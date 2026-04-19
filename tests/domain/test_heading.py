@@ -29,3 +29,15 @@ class TestHeadingTurnLeftFullCircle(unittest.TestCase):
 
         # THEN: The final heading is Heading.N
         self.assertEqual(h, Heading.N)
+
+
+class TestHeadingTurnRight(unittest.TestCase):
+    def test_rover_s2_given_heading_n_when_turn_right_then_returns_e(self):
+        # GIVEN: Heading.N
+        from mars_rover.domain.heading import Heading
+
+        # WHEN: turn_right() is called
+        result = Heading.N.turn_right()
+
+        # THEN: Returns Heading.E
+        self.assertEqual(result, Heading.E)
