@@ -1,7 +1,8 @@
 import unittest
 
-from mars_rover.domain.commands import TurnLeft, TurnRight
+from mars_rover.domain.commands import MoveForward, TurnLeft, TurnRight
 from mars_rover.domain.heading import Heading
+from mars_rover.domain.plateau import Plateau
 from mars_rover.domain.rover import Rover
 
 
@@ -31,3 +32,18 @@ class TestTurnRight(unittest.TestCase):
         self.assertEqual(rover.heading, Heading.E)
         self.assertEqual(rover.x, 1)
         self.assertEqual(rover.y, 2)
+
+
+class TestMoveForward(unittest.TestCase):
+    def test_nav_story_001_s3_move_forward_north_advances_y(self):
+        # GIVEN: A rover at (1, 2, N) on plateau 5 5
+        plateau = Plateau(5, 5)
+        rover = Rover(1, 2, Heading.N)
+
+        # WHEN: MoveForward is called
+        MoveForward(plateau)(rover)
+
+        # THEN: rover is at (1, 3, N)
+        self.assertEqual(rover.x, 1)
+        self.assertEqual(rover.y, 3)
+        self.assertEqual(rover.heading, Heading.N)
