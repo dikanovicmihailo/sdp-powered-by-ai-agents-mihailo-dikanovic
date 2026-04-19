@@ -45,3 +45,15 @@ class TestBoundarySafeStop(unittest.TestCase):
         # THEN: rover stays at (5, 0, E) and no exception is raised
         self.assertEqual(rover.x, 5)
         self.assertEqual(rover.y, 0)
+
+    def test_nav_story_002_s5_given_boundary_hit_when_move_then_no_exception_raised(
+        self,
+    ):
+        # GIVEN: a rover at (0, 0, S) on plateau 5 5
+        rover = Rover(0, 0, Heading.S)
+        # WHEN: command M is executed at boundary
+        # THEN: no exception propagates
+        try:
+            MoveForward(self.plateau)(rover)
+        except Exception as exc:
+            self.fail(f"MoveForward raised unexpectedly: {exc}")
