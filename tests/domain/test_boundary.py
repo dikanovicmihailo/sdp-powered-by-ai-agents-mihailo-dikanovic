@@ -1,6 +1,6 @@
 import unittest
 
-from mars_rover.domain.commands import MoveForward
+from mars_rover.domain.commands import MoveForward, TurnRight
 from mars_rover.domain.heading import Heading
 from mars_rover.domain.plateau import Plateau
 from mars_rover.domain.rover import Rover
@@ -57,3 +57,19 @@ class TestBoundarySafeStop(unittest.TestCase):
             MoveForward(self.plateau)(rover)
         except Exception as exc:
             self.fail(f"MoveForward raised unexpectedly: {exc}")
+
+    def test_nav_story_002_s5b_given_safe_stop_when_subsequent_cmds_then_moves(
+        self,
+    ):
+        # GIVEN: a rover at (0, 0, S) that safe-stops at boundary
+        rover = Rover(0, 0, Heading.S)
+        move = MoveForward(self.plateau)
+        move(rover)  # safe-stop: stays at (0, 0, S)
+        # WHEN: rover turns to face north and moves
+        TurnRight()(rover)  # now facing W
+        TurnRight()(rover)  # now facing N
+        move(rover)  # valid move: goes to (0, 1, N)
+        # THEN: rover moved to (0, 1, N)
+        self.assertEqual(rover.x, 0)
+        self.assertEqual(rover.y, 1)
+        self.assertEqual(rover.heading, Heading.N)
