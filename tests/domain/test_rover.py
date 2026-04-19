@@ -30,3 +30,20 @@ class TestRoverAllHeadings(unittest.TestCase):
         for heading in Heading:
             rover = Rover(0, 0, heading)
             self.assertEqual(rover.heading, heading)
+
+
+class TestRoverExecute(unittest.TestCase):
+    def test_rover_s3_given_rover_when_execute_called_with_command_then_command_applied(
+        self,
+    ):
+        # GIVEN: A Rover(1, 2, Heading.N)
+        from mars_rover.domain.heading import Heading
+        from mars_rover.domain.rover import Rover
+
+        rover = Rover(1, 2, Heading.N)
+
+        # WHEN: execute() is called with a callable that mutates heading
+        rover.execute(lambda r: setattr(r, "heading", Heading.E))
+
+        # THEN: heading is updated
+        self.assertEqual(rover.heading, Heading.E)
