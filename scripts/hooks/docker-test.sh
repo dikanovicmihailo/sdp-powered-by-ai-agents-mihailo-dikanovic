@@ -8,7 +8,7 @@ if [ ! -f "Dockerfile" ]; then
 fi
 
 # Only run when source, test, or build files are staged
-STAGED=$(git diff --cached --name-only --diff-filter=AM | grep -E '(^src/|^tests/|^Dockerfile$|^requirements\.txt$)' || true)
+STAGED=$(git diff --cached --name-only --diff-filter=AM | grep -E '(^mars_rover/|^tests/|^Dockerfile$|^requirements\.txt$)' || true)
 
 if [ -z "$STAGED" ]; then
     exit 0
