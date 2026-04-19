@@ -231,102 +231,85 @@ No UI impact. The operator can include `U` in any command string once the mappin
 
 **Story ID**: NAV-INFRA-004.1
 
-**As a** developer **I want** new command types to be deployable by redeploying the Lambda package without any changes to DynamoDB, EventBridge rules, or CloudWatch alarms **so that** extensibility is a pure code-level concern with zero infrastructure impact.
+**As a** developer **I want** extensible command functionality to be containerized and testable **so that** new commands can be added and validated consistently across environments.
 
 **Architecture Reference**: [07-deployment.md](../../architecture/07-deployment.md) — deployment topology; [10-quality-requirements.md](../../architecture/10-quality-requirements.md) — QS-6; [04-solution-strategy.md](../../architecture/04-solution-strategy.md) — Command pattern
 
 ---
 
-### SCENARIO 1: Adding UTurn requires only a Lambda redeployment — no infrastructure change
+### SCENARIO 1: Container processes new UTurn command correctly
 
 **Scenario ID**: NAV-INFRA-004.1-S1
 
 **GIVEN**
-* `UTurn` has been added to `commands.py` and registered in `MissionController`
+* The Docker container includes UTurn command implementation
+* Input contains a rover with command string including "U"
 
 **WHEN**
-* `sam deploy` is run to update the Lambda package
+* The container processes the mission
 
 **THEN**
-* Only the Lambda function code is updated
-* The DynamoDB table schema is unchanged
-* The EventBridge rules are unchanged
-* The CloudWatch alarms are unchanged
-* `template.yaml` has zero diff outside the Lambda function code reference
+* UTurn command is executed correctly (180-degree rotation)
+* Final rover position reflects the UTurn operation
+* Container completes successfully with correct output
+* No errors are logged for the UTurn command
 
 ---
 
-### SCENARIO 2: ExecuteCommands Lambda processes a U command from DynamoDB correctly
+### SCENARIO 2: Container validates command strings and rejects unknown commands
 
 **Scenario ID**: NAV-INFRA-004.1-S2
 
 **GIVEN**
-* A rover record in DynamoDB has `PK=MISSION#abc123`, `SK=ROVER#0`, `x=2`, `y=2`, `heading=N`, `commands="U"`
-* The updated Lambda package includes `UTurn`
+* The Docker container includes command validation logic
+* Input contains an unknown command character "X"
 
 **WHEN**
-* The `ExecuteCommands` Lambda processes the rover
+* The container processes the input
 
 **THEN**
-* The domain `MissionController` executes `UTurn` in memory
-* The final DynamoDB record has `x=2`, `y=2`, `heading=S`, `status=COMPLETED`
-* The `GetMissionResults` Lambda returns `"2 2 S"` for that rover
+* Validation error is logged to stderr with unknown command details
+* Container exits with non-zero exit code
+* No processing of invalid commands occurs
+* Error message indicates which command character is invalid
 
 ---
 
-### SCENARIO 3: Unknown command character is rejected at the API layer before Lambda invocation
+### SCENARIO 3: Dockerfile builds with extensible command dependencies
 
 **Scenario ID**: NAV-INFRA-004.1-S3
 
 **GIVEN**
-* The `CreateMission` Lambda validates command strings via `InputParser`
-* `InputParser` has been extended to validate that every character in a command string is a registered command letter (requires updating `_parse_commands()` — new method not present in CLI-STORY-001)
+* The extensible command system is implemented in domain code
+* The Dockerfile includes all command implementations
 
 **WHEN**
-* An operator submits `"commands": "LMX"` (unknown character `X`)
+* `docker build -t mars-rover .` is executed
 
 **THEN**
-* The Lambda returns HTTP 400: `{ "error": "Unknown command 'X'", "field": "rovers[0].commands" }`
-* No DynamoDB write occurs
-* No Lambda invocation for `ExecuteCommands` is triggered
-* The validation error is logged and counted by the `MarsRover/ValidationErrors` metric
-
-**Required `InputParser` extension:**
-```python
-# In InputParser — valid commands are injected so the set can be extended
-# without modifying InputParser itself (open/closed)
-_DEFAULT_VALID_COMMANDS = frozenset("LRM")
-
-class InputParser:
-    def __init__(self, valid_commands: frozenset[str] = _DEFAULT_VALID_COMMANDS) -> None:
-        self._valid_commands = valid_commands
-
-    def _parse_commands(self, line: str) -> str:
-        unknown = [ch for ch in line if ch not in self._valid_commands]
-        if unknown:
-            raise ValueError(
-                f"Unknown command(s) {unknown!r} in command string: {line!r}"
-            )
-        return line
-```
-
-When `UTurn` is registered, the caller constructs `InputParser(valid_commands=frozenset("LRMU"))`. `InputParser` itself is unchanged.
+* The build includes all command classes and the command registry
+* UTurn and other extensible commands are available in the container
+* The container can execute any registered command
+* Build completes without errors
 
 ---
 
-### SCENARIO 4: CloudWatch dashboard shows command distribution across missions
+### SCENARIO 4: Test suite validates extensible commands inside container
 
 **Scenario ID**: NAV-INFRA-004.1-S4
 
 **GIVEN**
-* The `ExecuteCommands` Lambda logs each command string length and character distribution
+* Test files exist for extensible command functionality including UTurn
+* The Docker container includes pytest
 
 **WHEN**
-* The `MarsRoverOps` CloudWatch dashboard is opened
+* `docker run --rm mars-rover pytest tests/ -k "command" -v` is executed
 
 **THEN**
-* A widget shows the average command string length per mission over the last 24 hours
-* This provides observability into how operators are using the system and whether new commands (like `U`) are being adopted
+* All extensible command tests run inside the container
+* Tests validate UTurn functionality and command validation
+* pytest discovers and executes all command-related tests
+* Container exits with code 0 on test success
 
 ---
 
@@ -337,7 +320,8 @@ When `UTurn` is registered, the caller constructs `InputParser(valid_commands=fr
 - [ ] All 6 `UTurn` unit tests pass
 - [ ] Zero changes to `Rover`, `Plateau`, `Heading`, or `OutputFormatter`
 - [ ] All existing tests still pass (no regression)
-- [ ] `sam deploy` after adding `UTurn` produces zero diff in `template.yaml` outside Lambda code
-- [ ] `ExecuteCommands` Lambda processes `U` command from DynamoDB and writes `heading=S` for a north-facing rover
-- [ ] Unknown command character rejected at API layer with HTTP 400 before any Lambda invocation
+- [ ] Container processes new UTurn command correctly
+- [ ] Container validates command strings and rejects unknown commands
+- [ ] Dockerfile builds successfully with extensible command dependencies
+- [ ] Test suite runs inside container and validates extensible commands
 - [ ] `ruff`, `black`, and `isort` pass with no warnings

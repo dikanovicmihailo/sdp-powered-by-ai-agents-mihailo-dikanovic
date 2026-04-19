@@ -215,122 +215,85 @@ def test_safe_stop_multiple_blocked_moves(plateau):
 
 **Story ID**: NAV-INFRA-002.1
 
-**As a** developer **I want** boundary safe-stop events to be logged to CloudWatch with structured metadata **so that** operators can detect misconfigured plateaus by querying logs rather than inspecting raw output.
+**As a** developer **I want** boundary safe-stop functionality to be containerized and testable **so that** boundary checking works consistently across environments.
 
 **Architecture Reference**: [07-deployment.md](../../architecture/07-deployment.md) — deployment topology; [11-risks-and-technical-debts.md](../../architecture/11-risks-and-technical-debts.md) — R-1; [02-constraints.md](../../architecture/02-constraints.md) — DC-5
 
 ---
 
-### SCENARIO 1: ExecuteCommands Lambda emits a structured log on every boundary safe-stop
+### SCENARIO 1: Container logs boundary safe-stops to stderr with structured metadata
 
 **Scenario ID**: NAV-INFRA-002.1-S1
 
 **GIVEN**
-* The `ExecuteCommands` Lambda is processing a rover at `(0, 0, S)` with command `M`
+* The Docker container includes boundary checking logic
+* A rover at position (0, 0, S) attempts to move forward
 
 **WHEN**
-* `MoveForward` applies the safe-stop (position unchanged)
+* The container processes the move command
 
 **THEN**
-* The Lambda emits a structured log line to CloudWatch Logs:
-  ```json
-  {
-    "level": "WARN",
-    "event": "BoundarySafeStop",
-    "missionId": "abc123",
-    "roverIndex": 0,
-    "x": 0,
-    "y": 0,
-    "heading": "S",
-    "attemptedDirection": "S"
-  }
-  ```
-* The rover's final DynamoDB record still reflects the last valid position
+* A structured log is written to stderr indicating the boundary safe-stop
+* Log includes rover position, heading, and attempted direction
+* Rover position remains unchanged in the final output
+* Container continues processing remaining commands
 
 ---
 
-### SCENARIO 2: CloudWatch Logs Insights query identifies missions with boundary violations
+### SCENARIO 2: Container handles multiple boundary violations gracefully
 
 **Scenario ID**: NAV-INFRA-002.1-S2
 
 **GIVEN**
-* Multiple Lambda invocations have emitted `BoundarySafeStop` log events
+* The Docker container processes a command sequence with multiple boundary violations
+* Multiple rovers attempt moves outside the plateau
 
 **WHEN**
-* An operator runs the following CloudWatch Logs Insights query:
-  ```
-  fields missionId, roverIndex, x, y, heading
-  | filter event = "BoundarySafeStop"
-  | stats count(*) as violations by missionId
-  | sort violations desc
-  ```
+* The container executes all commands
 
 **THEN**
-* The query returns a table of missions ordered by boundary violation count
-* This allows operators to identify misconfigured plateaus without re-running missions
+* Each boundary violation is logged separately to stderr
+* All safe-stops are handled without stopping execution
+* Final positions reflect only valid moves
+* Container completes successfully with exit code 0
 
 ---
 
-### SCENARIO 3: CloudWatch metric filter counts boundary safe-stops per minute
+### SCENARIO 3: Dockerfile builds with boundary checking dependencies
 
 **Scenario ID**: NAV-INFRA-002.1-S3
 
 **GIVEN**
-* A CloudWatch metric filter is defined on the `ExecuteCommands` log group
+* The boundary checking logic is implemented in domain code
+* The Dockerfile includes all domain and application layers
 
 **WHEN**
-* A `BoundarySafeStop` log event is emitted
+* `docker build -t mars-rover .` is executed
 
 **THEN**
-* The custom metric `MarsRover/BoundarySafeStops` is incremented by 1
-* The metric is visible in the `MarsRoverOps` CloudWatch dashboard
-
-**Metric filter (SAM):**
-```yaml
-BoundarySafeStopMetricFilter:
-  Type: AWS::Logs::MetricFilter
-  Properties:
-    LogGroupName: !Sub "/aws/lambda/${ExecuteCommandsFunction}"
-    FilterPattern: '{ $.event = "BoundarySafeStop" }'
-    MetricTransformations:
-      - MetricName: BoundarySafeStops
-        MetricNamespace: MarsRover
-        MetricValue: "1"
-```
+* The build includes boundary checking code and dependencies
+* Plateau boundary validation is available in the container
+* The container can perform safe-stop operations correctly
+* Build completes without errors
 
 ---
 
-### SCENARIO 4: CloudWatch alarm fires when safe-stop rate is abnormally high
+### SCENARIO 4: Test suite validates boundary checking inside container
 
 **Scenario ID**: NAV-INFRA-002.1-S4
 
 **GIVEN**
-* The `MarsRover/BoundarySafeStops` custom metric is being published
+* Test files exist for boundary checking and safe-stop functionality
+* The Docker container includes pytest
 
 **WHEN**
-* More than 10 safe-stops occur within a 5-minute window
+* `docker run --rm mars-rover pytest tests/ -k "boundary" -v` is executed
 
 **THEN**
-* The `HighBoundarySafeStopRate` alarm transitions to `ALARM`
-* An SNS notification is sent to the ops team
-* This signals a likely misconfigured plateau that needs operator attention
-
-**CloudWatch alarm (SAM):**
-```yaml
-HighBoundarySafeStopRateAlarm:
-  Type: AWS::CloudWatch::Alarm
-  Properties:
-    AlarmName: HighBoundarySafeStopRate
-    MetricName: BoundarySafeStops
-    Namespace: MarsRover
-    Statistic: Sum
-    Period: 300
-    EvaluationPeriods: 1
-    Threshold: 10
-    ComparisonOperator: GreaterThanThreshold
-    AlarmActions:
-      - !Ref OpsAlertTopic
-```
+* All 7 boundary tests run inside the container
+* Tests validate safe-stop behavior for various boundary conditions
+* pytest discovers and executes all boundary-related tests
+* Container exits with code 0 on test success
 
 ---
 
@@ -339,8 +302,8 @@ HighBoundarySafeStopRateAlarm:
 - [ ] All 7 boundary tests pass
 - [ ] No exception is raised on any boundary violation
 - [ ] Mission continues normally after a safe-stop (NAV-STORY-002-S5)
-- [ ] `ExecuteCommands` Lambda emits structured `BoundarySafeStop` log on every safe-stop
-- [ ] CloudWatch Logs Insights query documented and verified against sample log data
-- [ ] `BoundarySafeStopMetricFilter` defined in `template.yaml`; metric increments on each safe-stop
-- [ ] `HighBoundarySafeStopRate` alarm defined; fires when > 10 safe-stops in 5 minutes
+- [ ] Container logs boundary safe-stops to stderr with structured metadata
+- [ ] Container handles multiple boundary violations gracefully
+- [ ] Dockerfile builds successfully with boundary checking dependencies
+- [ ] Test suite runs inside container and validates boundary checking
 - [ ] `ruff`, `black`, and `isort` pass with no warnings

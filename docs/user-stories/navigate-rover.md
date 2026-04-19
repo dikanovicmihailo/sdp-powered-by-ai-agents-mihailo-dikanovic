@@ -268,103 +268,83 @@ Commands are expressed as a plain-text string on stdin. Parsing is covered in CL
 
 **Story ID**: NAV-INFRA-001.1
 
-**As a** developer **I want** the `ExecuteCommands` Lambda to read rover state from DynamoDB, run the command sequence in memory, and write the final position back **so that** navigation is stateless at the Lambda level and results are durable.
+**As a** developer **I want** the rover navigation functionality to be containerized and testable **so that** command execution works consistently across environments.
 
-**Architecture Reference**: [07-deployment.md](../../architecture/07-deployment.md) — deployment topology; [09-architecture-decisions.md](../../architecture/09-architecture-decisions.md) — ADR-001; [04-solution-strategy.md](../../architecture/04-solution-strategy.md) — Hexagonal architecture
+**Architecture Reference**: [07-deployment.md](../../architecture/07-deployment.md) — deployment topology; [04-solution-strategy.md](../../architecture/04-solution-strategy.md) — Hexagonal architecture
 
 ---
 
-### SCENARIO 1: Lambda reads rover and plateau from DynamoDB before executing commands
+### SCENARIO 1: Container executes rover commands and produces correct output
 
 **Scenario ID**: NAV-INFRA-001.1-S1
 
 **GIVEN**
-* DynamoDB contains `PK=MISSION#abc123`, `SK=PLATEAU` and `PK=MISSION#abc123`, `SK=ROVER#0`
-* The rover record has `commands="LMLMLMLMM"`, `x=1`, `y=2`, `heading=N`, `status=DEPLOYED`
-* The `ExecuteCommands` Lambda is invoked with `missionId=abc123`, `roverIndex=0`
+* The Docker container includes navigation command logic
+* Input contains plateau, rover position, and command string "LMLMLMLMM"
 
 **WHEN**
-* The Lambda handler runs
+* The container processes the complete input
 
 **THEN**
-* It reads both records in a single `BatchGetItem` call
-* Reconstructs `Plateau(5, 5)` and `Rover(1, 2, Heading.N)` in memory
-* Reads the `commands` field from the rover record
-* Executes `LMLMLMLMM` using the domain `MissionController`
-* Writes the final state `x=1, y=3, heading=N` back to `SK=ROVER#0`
+* Commands are executed in sequence using domain objects
+* Final rover position is calculated correctly
+* Output is written to stdout in the expected format
 
 ---
 
-### SCENARIO 2: Final rover position is written back to DynamoDB after execution
+### SCENARIO 2: Container handles command execution errors gracefully
 
 **Scenario ID**: NAV-INFRA-001.1-S2
 
 **GIVEN**
-* The `ExecuteCommands` Lambda has completed navigation
+* The Docker container includes error handling for navigation
+* Invalid command characters are provided in the command string
 
 **WHEN**
-* The domain `MissionController.run()` returns the final `Rover` state
+* The container attempts to execute the commands
 
 **THEN**
-* The Lambda updates `PK=MISSION#abc123`, `SK=ROVER#0` with `x=1`, `y=3`, `heading=N`, `status=COMPLETED`
-* The update uses a conditional expression to prevent overwriting a rover already in `COMPLETED` state
+* Error is logged to stderr with descriptive message
+* Container exits with non-zero exit code
+* No partial execution results are output
 
 ---
 
-### SCENARIO 3: ExecuteCommands Lambda is invoked by an EventBridge rule on RoverDeployed
+### SCENARIO 3: Dockerfile builds with navigation command dependencies
 
 **Scenario ID**: NAV-INFRA-001.1-S3
 
 **GIVEN**
-* An EventBridge rule matches `detail-type = RoverDeployed` on `MarsRoverEventBus`
-* The rule targets the `ExecuteCommands` Lambda
+* The `mars_rover/domain/commands.py` file exists with command implementations
+* The Dockerfile includes all domain code
 
 **WHEN**
-* A `RoverDeployed` event is published (from ROVER-INFRA-001.1)
+* `docker build -t mars-rover .` is executed
 
 **THEN**
-* EventBridge invokes `ExecuteCommands` automatically with the event payload
-* No manual trigger or polling is required
-* The Lambda processes the rover's command string end-to-end
-
-**EventBridge rule (SAM):**
-```yaml
-ExecuteOnDeploy:
-  Type: AWS::Events::Rule
-  Properties:
-    EventBusName: !Ref MarsRoverEventBus
-    EventPattern:
-      detail-type:
-        - RoverDeployed
-    Targets:
-      - Arn: !GetAtt ExecuteCommandsFunction.Arn
-        Id: ExecuteCommandsTarget
-
-ExecuteOnDeployPermission:
-  Type: AWS::Lambda::Permission
-  Properties:
-    FunctionName: !GetAtt ExecuteCommandsFunction.Arn
-    Action: lambda:InvokeFunction
-    Principal: events.amazonaws.com
-    SourceArn: !GetAtt ExecuteOnDeploy.Arn
-```
+* The build includes navigation command code at `/app/mars_rover/domain/commands.py`
+* All command-related dependencies are available
+* The container can import and use TurnLeft, TurnRight, MoveForward commands
+* Build completes without errors
 
 ---
 
-### SCENARIO 4: CloudWatch alarm fires when command execution errors exceed threshold
+### SCENARIO 4: Test suite validates navigation functionality inside container
 
 **Scenario ID**: NAV-INFRA-001.1-S4
 
 **GIVEN**
-* A CloudWatch alarm monitors `ExecuteCommands` Lambda errors
+* Test files exist for navigation commands and integration scenarios
+* The Docker container includes pytest
 
 **WHEN**
-* The Lambda fails on 2 or more invocations within a 5-minute window
+* `docker run --rm mars-rover pytest tests/domain/test_commands.py -v` is executed
 
 **THEN**
-* The `ExecuteCommandsErrors` alarm transitions to `ALARM`
-* CloudWatch Logs contains the `missionId`, `roverIndex`, command string, and exception traceback
-* A structured log line is emitted: `{"level": "ERROR", "missionId": "...", "roverIndex": 0, "error": "..."}`
+* All navigation command tests run inside the container
+* Integration tests validate complete command sequences
+* pytest discovers and executes all navigation-related tests
+* Container exits with code 0 on test success
 
 ---
 
@@ -373,9 +353,9 @@ ExecuteOnDeployPermission:
 - [ ] `TurnLeft`, `TurnRight`, `MoveForward` implemented in `mars_rover/domain/commands.py`
 - [ ] Both kata integration examples pass (NAV-STORY-001-S4, NAV-STORY-001-S5)
 - [ ] All individual command unit tests pass
-- [ ] `ExecuteCommands` Lambda reads plateau + rover via `BatchGetItem` and writes final state back
-- [ ] EventBridge rule triggers `ExecuteCommands` on `RoverDeployed` event
-- [ ] `ExecuteCommandsErrors` CloudWatch alarm defined; fires on ≥2 errors in 5 minutes
-- [ ] Structured error logs include `missionId`, `roverIndex`, and exception
+- [ ] Container executes rover commands and produces correct output
+- [ ] Container handles command execution errors gracefully
+- [ ] Dockerfile builds successfully with navigation command dependencies
+- [ ] Test suite runs inside container and validates navigation functionality
 - [ ] `ruff`, `black`, and `isort` pass with no warnings
 - [ ] No imports from `adapters/` or `application/` inside `domain/`

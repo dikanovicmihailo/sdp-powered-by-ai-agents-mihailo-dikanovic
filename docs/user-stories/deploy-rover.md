@@ -248,109 +248,81 @@ Rover deployment is expressed via the stdin text format `1 2 N`. Parsing is cove
 
 **Story ID**: ROVER-INFRA-001.1
 
-**As a** developer **I want** each rover deployment to be stored as a DynamoDB record and trigger a `RoverDeployed` event **so that** downstream services can react to new rovers without polling the database.
+**As a** developer **I want** the rover deployment functionality to be containerized and testable **so that** the application can be built, tested, and deployed consistently across environments.
 
-**Architecture Reference**: [07-deployment.md](../../architecture/07-deployment.md) — deployment topology; [09-architecture-decisions.md](../../architecture/09-architecture-decisions.md) — ADR-001 DynamoDB single-table design; [02-constraints.md](../../architecture/02-constraints.md) — TC-1
+**Architecture Reference**: [07-deployment.md](../../architecture/07-deployment.md) — deployment topology; [02-constraints.md](../../architecture/02-constraints.md) — TC-1
 
 ---
 
-### SCENARIO 1: Rover record is written to DynamoDB on deployment
+### SCENARIO 1: Dockerfile builds successfully with rover domain code
 
 **Scenario ID**: ROVER-INFRA-001.1-S1
 
 **GIVEN**
-* A DynamoDB table `MarsRoverMissions` exists
-* A mission `abc123` with plateau `5 5` already exists
-* `CreateMission` (CLI-INFRA-001.1) calls `DeployRover` internally for each rover in the request
+* The `Dockerfile` exists in the project root
+* The `mars_rover/domain/` directory contains `rover.py` and `heading.py`
 
 **WHEN**
-* The `DeployRover` Lambda is invoked with `missionId=abc123`, `x=1`, `y=2`, `heading=N`, `commands="LMLMLMLMM"`
+* `docker build -t mars-rover .` is executed
 
 **THEN**
-* A record is written with `PK=MISSION#abc123`, `SK=ROVER#0`, `x=1`, `y=2`, `heading=N`, `commands="LMLMLMLMM"`, `status=DEPLOYED`
-* The write succeeds
-* The rover index `0` is returned to the caller
-
-**DynamoDB item shape:**
-```json
-{
-  "PK": "MISSION#abc123",
-  "SK": "ROVER#0",
-  "x": 1,
-  "y": 2,
-  "heading": "N",
-  "commands": "LMLMLMLMM",
-  "status": "DEPLOYED"
-}
-```
-
-> **Note:** `DeployRover` is an internal Lambda, not a public API endpoint. It is invoked by `CreateMission` once per rover in the submitted mission. Operators never call it directly.
+* The build completes successfully with exit code 0
+* The container includes the rover domain code at `/app/mars_rover/domain/`
+* No build errors or warnings are reported
 
 ---
 
-### SCENARIO 2: RoverDeployed event is published to EventBridge on successful write
+### SCENARIO 2: Test suite runs inside Docker container and validates rover functionality
 
 **Scenario ID**: ROVER-INFRA-001.1-S2
 
 **GIVEN**
-* The `DeployRover` Lambda has written the rover record to DynamoDB
+* The Docker image has been built successfully
+* Test files exist in `tests/domain/test_rover.py` and `tests/domain/test_heading.py`
 
 **WHEN**
-* The DynamoDB write succeeds
+* `docker run --rm mars-rover pytest tests/domain/ -v` is executed
 
 **THEN**
-* The Lambda publishes a `RoverDeployed` event to the `MarsRoverEventBus` EventBridge bus
-* The event payload includes `missionId`, `roverIndex`, `x`, `y`, `heading`
-* Downstream consumers (e.g. a mission status tracker) can subscribe to this event
-
-**EventBridge event shape:**
-```json
-{
-  "source": "mars-rover.deploy",
-  "detail-type": "RoverDeployed",
-  "detail": {
-    "missionId": "abc123",
-    "roverIndex": 0,
-    "x": 1,
-    "y": 2,
-    "heading": "N"
-  }
-}
-```
+* All rover and heading tests pass
+* Test output shows successful validation of rover initialization and heading rotation
+* Container exits with code 0
 
 ---
 
-### SCENARIO 3: DeployRover Lambda is deployed with least-privilege IAM
+### SCENARIO 3: Dependencies are installed correctly in container
 
 **Scenario ID**: ROVER-INFRA-001.1-S3
 
 **GIVEN**
-* The `DeployRover` Lambda is defined in `template.yaml`
+* The `requirements.txt` file lists all necessary dependencies
+* The Dockerfile includes dependency installation steps
 
 **WHEN**
-* `sam deploy` is run
+* The Docker build process installs dependencies
 
 **THEN**
-* The Lambda's IAM role has exactly: `dynamodb:PutItem` on `MarsRoverMissions` and `events:PutEvents` on `MarsRoverEventBus`
-* No wildcard (`*`) resource permissions are granted
-* The function has a 10-second timeout and 128 MB memory
+* All required packages (pytest, black, isort, ruff) are available in the container
+* No dependency conflicts or missing packages are reported
+* The Python environment is properly configured with PYTHONPATH=/app
 
 ---
 
-### SCENARIO 4: CloudWatch alarm fires when rover deployment fails
+### SCENARIO 4: Project structure supports pytest discovery
 
 **Scenario ID**: ROVER-INFRA-001.1-S4
 
 **GIVEN**
-* A CloudWatch alarm monitors the `DeployRover` Lambda error metric
+* The project follows Python package structure with `__init__.py` files
+* Test files are organized in the `tests/` directory
 
 **WHEN**
-* The Lambda fails (e.g. DynamoDB write rejected, EventBridge throttled)
+* `pytest` is run inside the container without specific file paths
 
 **THEN**
-* The `DeployRoverErrors` alarm transitions to `ALARM` within 1 minute
-* The error is logged to CloudWatch Logs with `missionId`, `roverIndex`, and the exception type
-* The alarm action notifies the ops SNS topic
+* pytest automatically discovers all test files in `tests/domain/`
+* All rover-related tests are executed
+* Test coverage includes rover initialization and heading functionality
 
 ---
 
@@ -360,9 +332,9 @@ Rover deployment is expressed via the stdin text format `1 2 N`. Parsing is cove
 - [ ] `Rover` dataclass implemented in `mars_rover/domain/rover.py`
 - [ ] All heading rotation and delta tests pass
 - [ ] All rover initialisation tests pass
-- [ ] `DeployRover` Lambda writes rover record to DynamoDB with correct item shape
-- [ ] `RoverDeployed` event published to `MarsRoverEventBus` on successful write
-- [ ] Lambda IAM role scoped to `dynamodb:PutItem` and `events:PutEvents` only
-- [ ] `DeployRoverErrors` CloudWatch alarm defined and wired to SNS topic
+- [ ] Dockerfile builds successfully without errors
+- [ ] Test suite runs inside Docker container and passes
+- [ ] Dependencies are correctly installed in container
+- [ ] pytest discovers and runs all domain tests
 - [ ] `ruff`, `black`, and `isort` pass with no warnings
 - [ ] No imports from `adapters/` or `application/` inside `domain/`

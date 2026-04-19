@@ -215,112 +215,93 @@ $ echo $?
 
 **Story ID**: CLI-INFRA-003.1
 
-**As a** developer **I want** the `CreateMission` Lambda to return structured error responses and log validation failures to CloudWatch **so that** operators get actionable error messages and the ops team can monitor input quality.
+**As a** developer **I want** input validation to be containerized and testable **so that** validation errors are handled consistently across environments.
 
 **Architecture Reference**: [07-deployment.md](../../architecture/07-deployment.md) — deployment topology; [08-cross-cutting-concepts.md](../../architecture/08-cross-cutting-concepts.md) — error handling; [11-risks-and-technical-debts.md](../../architecture/11-risks-and-technical-debts.md) — R-2, TD-3
 
 ---
 
-### SCENARIO 1: Lambda returns HTTP 400 with structured error body on invalid input
+### SCENARIO 1: Container validates input and logs structured errors to stderr
 
 **Scenario ID**: CLI-INFRA-003.1-S1
 
 **GIVEN**
-* The `CreateMission` Lambda receives a request with `"heading": "X"`
+* The Docker container includes input validation logic
+* Invalid input with heading "X" is provided
 
 **WHEN**
-* `InputParser.parse()` raises `ValueError`
+* The container processes the input
 
 **THEN**
-* The Lambda returns HTTP 400:
-  ```json
-  {
-    "error": "Invalid heading 'X'. Must be one of N, E, S, W.",
-    "field": "rovers[0].heading"
-  }
-  ```
-* No DynamoDB write occurs
-* No event is published to EventBridge
+* Validation error is logged to stderr with structured format
+* Error message includes field information and descriptive text
+* Container exits with non-zero exit code
+* No processing of invalid data occurs
 
 ---
 
-### SCENARIO 2: Validation errors are logged to CloudWatch Logs at WARN level
+### SCENARIO 2: Container handles multiple validation errors gracefully
 
 **Scenario ID**: CLI-INFRA-003.1-S2
 
 **GIVEN**
-* The Lambda catches a `ValueError` from `InputParser`
+* The Docker container includes comprehensive validation
+* Input contains multiple validation errors (invalid plateau and heading)
 
 **WHEN**
-* The error response is returned
+* The container attempts to validate the input
 
 **THEN**
-* A structured log line is emitted:
-  ```json
-  {
-    "level": "WARN",
-    "event": "ValidationError",
-    "requestId": "<lambda-request-id>",
-    "error": "Invalid heading 'X'. Must be one of N, E, S, W.",
-    "field": "rovers[0].heading"
-  }
-  ```
-* The log is queryable via CloudWatch Logs Insights using `filter event = "ValidationError"`
+* All validation errors are collected and logged to stderr
+* Each error includes specific field and validation failure information
+* Container exits with appropriate error code
+* No partial processing occurs
 
 ---
 
-### SCENARIO 3: CloudWatch metric filter counts validation errors per minute
+### SCENARIO 3: Dockerfile builds with validation dependencies
 
 **Scenario ID**: CLI-INFRA-003.1-S3
 
 **GIVEN**
-* A CloudWatch metric filter is defined on the `CreateMission` log group
+* The validation logic requires specific dependencies
+* The Dockerfile includes all necessary validation code
 
 **WHEN**
-* A `ValidationError` log event is emitted
+* `docker build -t mars-rover .` is executed
 
 **THEN**
-* The custom metric `MarsRover/ValidationErrors` is incremented by 1
-* The metric appears on the `MarsRoverOps` CloudWatch dashboard
-
-**Metric filter (SAM):**
-```yaml
-ValidationErrorMetricFilter:
-  Type: AWS::Logs::MetricFilter
-  Properties:
-    LogGroupName: !Sub "/aws/lambda/${CreateMissionFunction}"
-    FilterPattern: '{ $.event = "ValidationError" }'
-    MetricTransformations:
-      - MetricName: ValidationErrors
-        MetricNamespace: MarsRover
-        MetricValue: "1"
-```
+* The build includes all validation-related code and dependencies
+* Input validation modules are available in the container
+* The container can perform comprehensive input validation
+* Build completes without dependency errors
 
 ---
 
-### SCENARIO 4: CloudWatch alarm fires when validation error rate is high
+### SCENARIO 4: Test suite validates error handling inside container
 
 **Scenario ID**: CLI-INFRA-003.1-S4
 
 **GIVEN**
-* The `MarsRover/ValidationErrors` custom metric is being published
+* Test files exist for input validation and error handling
+* The Docker container includes pytest
 
 **WHEN**
-* More than 20 validation errors occur within a 5-minute window
+* `docker run --rm mars-rover pytest tests/ -k "validation" -v` is executed
 
 **THEN**
-* The `HighValidationErrorRate` alarm transitions to `ALARM`
-* This signals a likely broken client or a change in the input format contract
-* An SNS notification is sent to the ops team
+* All validation error tests run inside the container
+* Tests validate proper error handling for various invalid inputs
+* pytest discovers and executes all validation-related tests
+* Container exits with code 0 on test success
 
 ---
 
 ## Definition of Done
 
 - [ ] All 8 CLI error integration tests pass
-- [ ] `CreateMission` Lambda returns HTTP 400 with `{ "error": "...", "field": "..." }` on `ValueError`
-- [ ] No DynamoDB write or EventBridge event on validation failure
-- [ ] Structured `ValidationError` log emitted at `WARN` level with `requestId` and `field`
-- [ ] `ValidationErrorMetricFilter` defined in `template.yaml`; metric increments on each validation error
-- [ ] `HighValidationErrorRate` alarm defined; fires when > 20 errors in 5 minutes
+- [ ] Container validates input and logs structured errors to stderr
+- [ ] Container handles multiple validation errors gracefully
+- [ ] Dockerfile builds successfully with validation dependencies
+- [ ] Test suite runs inside container and validates error handling
 - [ ] `ruff`, `black`, and `isort` pass with no warnings
