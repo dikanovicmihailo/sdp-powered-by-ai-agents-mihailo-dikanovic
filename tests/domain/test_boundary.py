@@ -73,3 +73,14 @@ class TestBoundarySafeStop(unittest.TestCase):
         self.assertEqual(rover.x, 0)
         self.assertEqual(rover.y, 1)
         self.assertEqual(rover.heading, Heading.N)
+
+    def test_nav_story_002_s5c_given_multiple_blocked_moves_when_move_then_stays(self):
+        # GIVEN: a rover at (3, 5, N) — already at north boundary
+        rover = Rover(3, 5, Heading.N)
+        move = MoveForward(self.plateau)
+        # WHEN: 3 forward commands are executed
+        for _ in range(3):
+            move(rover)
+        # THEN: rover stays at (3, 5) — all moves were safe-stopped
+        self.assertEqual(rover.x, 3)
+        self.assertEqual(rover.y, 5)
