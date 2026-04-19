@@ -41,3 +41,36 @@ class TestHeadingTurnRight(unittest.TestCase):
 
         # THEN: Returns Heading.E
         self.assertEqual(result, Heading.E)
+
+
+class TestHeadingDelta(unittest.TestCase):
+    def test_rover_s1_given_heading_n_when_delta_then_returns_0_1(self):
+        # GIVEN: Heading.N
+        from mars_rover.domain.heading import Heading
+
+        # WHEN: delta() is called
+        result = Heading.N.delta()
+
+        # THEN: Returns (0, 1)
+        self.assertEqual(result, (0, 1))
+
+    def test_rover_s1_given_heading_e_when_delta_then_returns_1_0(self):
+        # GIVEN: Heading.E
+        from mars_rover.domain.heading import Heading
+
+        # WHEN / THEN
+        self.assertEqual(Heading.E.delta(), (1, 0))
+
+    def test_rover_s1_given_heading_s_when_delta_then_returns_0_minus1(self):
+        # GIVEN: Heading.S
+        from mars_rover.domain.heading import Heading
+
+        # WHEN / THEN
+        self.assertEqual(Heading.S.delta(), (0, -1))
+
+    def test_rover_s1_given_heading_w_when_delta_then_returns_minus1_0(self):
+        # GIVEN: Heading.W
+        from mars_rover.domain.heading import Heading
+
+        # WHEN / THEN
+        self.assertEqual(Heading.W.delta(), (-1, 0))
