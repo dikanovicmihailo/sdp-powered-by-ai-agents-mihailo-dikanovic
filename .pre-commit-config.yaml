@@ -47,6 +47,14 @@ repos:
   # Commit message format
   - repo: local
     hooks:
+      - id: docker-test
+        name: Docker Test
+        entry: bash scripts/hooks/docker-test.sh
+        language: system
+        stages: [pre-commit]
+        pass_filenames: false
+        always_run: true
+
       - id: commit-msg-format
         name: Commit message format
         entry: scripts/hooks/check-commit-msg.sh
