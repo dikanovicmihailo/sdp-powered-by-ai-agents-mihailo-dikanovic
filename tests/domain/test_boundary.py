@@ -27,3 +27,12 @@ class TestBoundarySafeStop(unittest.TestCase):
         # THEN: rover stays at (5, 5, N) and no exception is raised
         self.assertEqual(rover.x, 5)
         self.assertEqual(rover.y, 5)
+
+    def test_nav_story_002_s3_given_rover_at_west_boundary_when_move_then_stays(self):
+        # GIVEN: a rover at (0, 0, W) on plateau 5 5
+        rover = Rover(0, 0, Heading.W)
+        # WHEN: command M is executed
+        MoveForward(self.plateau)(rover)
+        # THEN: rover stays at (0, 0, W) and no exception is raised
+        self.assertEqual(rover.x, 0)
+        self.assertEqual(rover.y, 0)
