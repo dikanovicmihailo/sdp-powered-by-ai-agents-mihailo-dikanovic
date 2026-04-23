@@ -40,3 +40,22 @@ class TestMissionStory001S2(unittest.TestCase):
         # THEN: Rover 2 starts from its own position, unaffected by rover 1
         self.assertEqual(results[1].x, 1)
         self.assertEqual(results[1].y, 0)
+
+
+class TestMissionStory001S3(unittest.TestCase):
+    def test_s3_given_two_rovers_when_output_produced_then_one_result_per_rover(
+        self,
+    ):
+        # GIVEN: Two rovers complete their missions
+        plateau = Plateau(5, 5)
+        rover1 = Rover(1, 2, Heading.N)
+        rover2 = Rover(3, 3, Heading.E)
+        controller = MissionController(plateau)
+
+        # WHEN: Mission runs
+        results = controller.run([(rover1, ""), (rover2, "")])
+
+        # THEN: Two results in deployment order
+        self.assertEqual(len(results), 2)
+        self.assertIs(results[0], rover1)
+        self.assertIs(results[1], rover2)
