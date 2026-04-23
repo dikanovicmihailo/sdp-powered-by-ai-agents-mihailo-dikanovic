@@ -5,6 +5,7 @@ from mars_rover.domain.commands import (
     ObstacleEncountered,
     TurnLeft,
     TurnRight,
+    UTurn,
 )
 from mars_rover.domain.plateau import Plateau
 from mars_rover.domain.rover import Rover
@@ -19,6 +20,7 @@ class MissionController:
             "L": TurnLeft(),
             "R": TurnRight(),
             "M": MoveForward(self._plateau),
+            "U": UTurn(),
         }
         results: list[tuple[Rover, bool]] = []
         for rover, command_string in missions:

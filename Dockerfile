@@ -28,6 +28,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # ──────────────────────────────────────────────────────────────────────────────
 FROM deps AS lint
 
+COPY pyproject.toml .
 COPY mars_rover/ ./mars_rover/
 COPY tests/ ./tests/
 
@@ -46,6 +47,7 @@ RUN echo "Running code quality checks..." && \
 # ──────────────────────────────────────────────────────────────────────────────
 FROM deps AS test
 
+COPY pyproject.toml .
 COPY mars_rover/ ./mars_rover/
 COPY tests/ ./tests/
 
@@ -59,6 +61,7 @@ CMD ["pytest", "tests/", "-v", "--tb=short", "--cov=mars_rover", "--cov-report=t
 # ──────────────────────────────────────────────────────────────────────────────
 FROM base AS runtime
 
+COPY pyproject.toml .
 COPY mars_rover/ ./mars_rover/
 
 USER appuser
