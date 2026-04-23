@@ -18,8 +18,8 @@ def main() -> None:
 
     controller = MissionController(plateau)
     formatter = OutputFormatter()
-    for rover in controller.run(missions):
-        print(formatter.format(rover))
+    for rover, obstacle_stopped in controller.run(missions):
+        print(formatter.format(rover, obstacle_stopped=obstacle_stopped))
 
 
 if __name__ == "__main__":
