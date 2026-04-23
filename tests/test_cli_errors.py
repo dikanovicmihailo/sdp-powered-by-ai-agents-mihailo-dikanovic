@@ -34,3 +34,15 @@ class TestCLIErrors(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("Input error", result.stderr)
         self.assertIn("heading", result.stderr.lower())
+
+    def test_cli_story_003_s3_given_non_integer_coords_when_cli_runs_then_exits_1(
+        self,
+    ):
+        # GIVEN: Rover line has non-integer coordinates
+        # WHEN: CLI runs
+        result = _run("5 5\na b N\nM\n")
+
+        # THEN: Exit code is 1 and stderr contains descriptive message
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Input error", result.stderr)
+        self.assertIn("integers", result.stderr)
