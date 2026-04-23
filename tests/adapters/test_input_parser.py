@@ -41,3 +41,15 @@ class TestInputParser(unittest.TestCase):
         self.assertEqual(rover2.y, 3)
         self.assertEqual(rover2.heading, Heading.E)
         self.assertEqual(cmd2, "MMRMMRMRRM")
+
+    def test_cli_story_001_s4_given_single_rover_input_when_parse_then_one_mission(
+        self,
+    ):
+        # GIVEN: Input with plateau and one rover block
+        parser = InputParser()
+
+        # WHEN: InputParser.parse() is called
+        _, missions = parser.parse("5 5\n3 3 E\nMMRMMRMRRM\n")
+
+        # THEN: Returns one (Rover, command_string) pair
+        self.assertEqual(len(missions), 1)
