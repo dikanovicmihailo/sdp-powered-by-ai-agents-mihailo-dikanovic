@@ -34,3 +34,10 @@ class MoveForward:
             raise ObstacleEncountered()
         rover.x = new_x
         rover.y = new_y
+
+
+class UTurn:
+    """Rotate the rover 180° in place."""
+
+    def __call__(self, rover: Rover) -> None:
+        rover.heading = rover.heading.turn_right().turn_right()
