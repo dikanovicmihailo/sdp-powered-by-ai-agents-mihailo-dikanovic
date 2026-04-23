@@ -20,3 +20,17 @@ class TestObstacle(unittest.TestCase):
             MoveForward(plateau)(rover)
         self.assertEqual(rover.x, 1)
         self.assertEqual(rover.y, 2)
+
+    def test_nav_story_003_s3_given_no_obstacles_when_move_forward_then_moves_normally(
+        self,
+    ):
+        # GIVEN: Plateau with no obstacles, rover at (1,2,E)
+        plateau = Plateau(5, 5)
+        rover = Rover(1, 2, Heading.E)
+
+        # WHEN: MoveForward is called
+        MoveForward(plateau)(rover)
+
+        # THEN: Rover moves normally to (2,2)
+        self.assertEqual(rover.x, 2)
+        self.assertEqual(rover.y, 2)
