@@ -1,1 +1,3 @@
 .venv/
+mars_rover/__pycache__/
+tests/__pycache__/

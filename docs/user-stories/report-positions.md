@@ -168,107 +168,83 @@ The output is plain text on stdout — one line per rover. No UI component requi
 
 **Story ID**: CLI-INFRA-002.1
 
-**As a** developer **I want** the `GetMissionResults` Lambda to read all rover final positions from DynamoDB and return them in the standard `x y HEADING` format **so that** operators can retrieve results via an API call after the mission completes.
+**As a** developer **I want** the output formatting functionality to be containerized and testable **so that** rover position reporting works consistently across environments.
 
-**Architecture Reference**: [07-deployment.md](../../architecture/07-deployment.md) — deployment topology; [09-architecture-decisions.md](../../architecture/09-architecture-decisions.md) — ADR-001; [01-introduction.md](../../architecture/01-introduction.md) — FR-5
+**Architecture Reference**: [07-deployment.md](../../architecture/07-deployment.md) — deployment topology; [01-introduction.md](../../architecture/01-introduction.md) — FR-5
 
 ---
 
-### SCENARIO 1: Lambda queries all rover records for a mission and returns formatted positions
+### SCENARIO 1: Container formats and outputs rover positions correctly
 
 **Scenario ID**: CLI-INFRA-002.1-S1
 
 **GIVEN**
-* DynamoDB contains completed rover records for `MISSION#abc123`:
-  * `SK=ROVER#0`: `x=1, y=3, heading=N, status=COMPLETED`
-  * `SK=ROVER#1`: `x=5, y=1, heading=E, status=COMPLETED`
+* The Docker container includes output formatting logic
+* Multiple rovers have completed their missions with final positions
 
 **WHEN**
-* The `GetMissionResults` Lambda is invoked with `missionId=abc123`
+* The container processes the mission results
 
 **THEN**
-* It queries `PK=MISSION#abc123` with `SK begins_with ROVER#`
-* Returns a JSON response:
-  ```json
-  {
-    "missionId": "abc123",
-    "results": ["1 3 N", "5 1 E"]
-  }
-  ```
-* Rovers are ordered by `SK` (deployment order)
+* Each rover position is formatted as "x y HEADING"
+* Rovers are output in deployment order
+* Output is written to stdout with proper line endings
 
 ---
 
-### SCENARIO 2: Lambda returns 404 when mission does not exist
+### SCENARIO 2: Container handles missing or invalid rover data gracefully
 
 **Scenario ID**: CLI-INFRA-002.1-S2
 
 **GIVEN**
-* No records exist for `MISSION#unknown` in DynamoDB
+* The Docker container includes error handling for output formatting
+* Some rover data is missing or corrupted
 
 **WHEN**
-* `GetMissionResults` is invoked with `missionId=unknown`
+* The container attempts to format the output
 
 **THEN**
-* The Lambda returns HTTP 404 with body `{"error": "Mission not found"}`
-* No exception is logged to CloudWatch Logs (this is an expected business case, not an error)
+* Error is logged to stderr with descriptive message
+* Container exits with non-zero exit code
+* No partial or invalid output is produced
 
 ---
 
-### SCENARIO 3: GetMissionResults is exposed via API Gateway
+### SCENARIO 3: Dockerfile builds with output formatting dependencies
 
 **Scenario ID**: CLI-INFRA-002.1-S3
 
 **GIVEN**
-* An API Gateway REST API is defined in `template.yaml`
-* The `GET /missions/{missionId}/results` route targets `GetMissionResults`
+* The `mars_rover/adapters/output_formatter.py` file exists
+* The Dockerfile includes adapter layer code
 
 **WHEN**
-* An operator calls `GET /missions/abc123/results`
+* `docker build -t mars-rover .` is executed
 
 **THEN**
-* API Gateway invokes the Lambda and returns the JSON response
-* The response includes `Content-Type: application/json`
-* HTTP 200 on success, 404 on missing mission
-
-**SAM resource snippet:**
-```yaml
-GetMissionResultsFunction:
-  Type: AWS::Serverless::Function
-  Properties:
-    Handler: mars_rover.handlers.get_results.handler
-    Runtime: python3.12
-    Events:
-      GetResults:
-        Type: Api
-        Properties:
-          Path: /missions/{missionId}/results
-          Method: GET
-    Policies:
-      - Statement:
-          - Effect: Allow
-            Action:
-              - dynamodb:Query
-              - dynamodb:GetItem
-            Resource: !GetAtt MarsRoverMissionsTable.Arn
-```
+* The build includes output formatting code at `/app/mars_rover/adapters/output_formatter.py`
+* All formatting-related dependencies are available
+* The container can import and use the OutputFormatter class
+* Build completes without errors
 
 ---
 
-### SCENARIO 4: CloudWatch dashboard shows mission result retrieval latency
+### SCENARIO 4: Test suite validates output formatting inside container
 
 **Scenario ID**: CLI-INFRA-002.1-S4
 
 **GIVEN**
-* A CloudWatch dashboard `MarsRoverOps` is defined in `template.yaml`
+* Test files exist for output formatting functionality
+* The Docker container includes pytest
 
 **WHEN**
-* The dashboard is opened in the AWS Console
+* `docker run --rm mars-rover pytest tests/adapters/test_output_formatter.py -v` is executed
 
 **THEN**
-* It shows a widget for `GetMissionResults` Lambda duration (p50, p95, p99)
-* It shows a widget for `GetMissionResults` error count
-* It shows a widget for DynamoDB `SuccessfulRequestLatency` on the `MarsRoverMissions` table
+* All output formatting tests run inside the container
+* Tests validate correct position formatting and error handling
+* pytest discovers and executes all formatter-related tests
+* Container exits with code 0 on test success
 
 ---
 
@@ -276,8 +252,8 @@ GetMissionResultsFunction:
 
 - [ ] `OutputFormatter` implemented in `mars_rover/adapters/output_formatter.py`
 - [ ] All formatter unit tests pass
-- [ ] `GetMissionResults` Lambda queries DynamoDB by `PK=MISSION#<id>` and returns ordered `x y HEADING` lines
-- [ ] Lambda returns HTTP 404 for unknown mission IDs
-- [ ] `GET /missions/{missionId}/results` API Gateway route defined in `template.yaml`
-- [ ] CloudWatch dashboard `MarsRoverOps` includes latency and error widgets
+- [ ] Container formats and outputs rover positions correctly
+- [ ] Container handles missing or invalid rover data gracefully
+- [ ] Dockerfile builds successfully with output formatting dependencies
+- [ ] Test suite runs inside container and validates output formatting
 - [ ] `ruff`, `black`, and `isort` pass with no warnings
