@@ -63,3 +63,13 @@ class TestInputParser(unittest.TestCase):
         # WHEN / THEN: ValueError raised with "Plateau" in message
         with self.assertRaisesRegex(ValueError, "Plateau"):
             parser.parse("5\n1 2 N\nM\n")
+
+    def test_cli_be_001_s2_given_invalid_heading_when_parse_then_raises_value_error(
+        self,
+    ):
+        # GIVEN: Rover line has invalid heading "X"
+        parser = InputParser()
+
+        # WHEN / THEN: ValueError raised with "heading" in message
+        with self.assertRaisesRegex(ValueError, "heading"):
+            parser.parse("5 5\n1 2 X\nM\n")
