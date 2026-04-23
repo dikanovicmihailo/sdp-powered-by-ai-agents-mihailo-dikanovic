@@ -59,3 +59,27 @@ class TestMissionStory001S3(unittest.TestCase):
         self.assertEqual(len(results), 2)
         self.assertIs(results[0], rover1)
         self.assertIs(results[1], rover2)
+
+
+class TestMissionStory001S4(unittest.TestCase):
+    def test_s4_given_kata_input_when_mission_runs_then_correct_final_positions(
+        self,
+    ):
+        # GIVEN: Kata example — plateau 5x5, two rovers with full command strings
+        plateau = Plateau(5, 5)
+        missions = [
+            (Rover(1, 2, Heading.N), "LMLMLMLMM"),
+            (Rover(3, 3, Heading.E), "MMRMMRMRRM"),
+        ]
+        controller = MissionController(plateau)
+
+        # WHEN: Mission runs
+        results = controller.run(missions)
+
+        # THEN: Rover 1 ends at 1 3 N, Rover 2 ends at 5 1 E
+        self.assertEqual(results[0].x, 1)
+        self.assertEqual(results[0].y, 3)
+        self.assertEqual(results[0].heading, Heading.N)
+        self.assertEqual(results[1].x, 5)
+        self.assertEqual(results[1].y, 1)
+        self.assertEqual(results[1].heading, Heading.E)
