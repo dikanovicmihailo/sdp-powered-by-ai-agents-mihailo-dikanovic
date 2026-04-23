@@ -53,3 +53,13 @@ class TestInputParser(unittest.TestCase):
 
         # THEN: Returns one (Rover, command_string) pair
         self.assertEqual(len(missions), 1)
+
+    def test_cli_be_001_s1_given_bad_plateau_when_parse_then_raises_value_error(
+        self,
+    ):
+        # GIVEN: Plateau line is missing height
+        parser = InputParser()
+
+        # WHEN / THEN: ValueError raised with "Plateau" in message
+        with self.assertRaisesRegex(ValueError, "Plateau"):
+            parser.parse("5\n1 2 N\nM\n")
