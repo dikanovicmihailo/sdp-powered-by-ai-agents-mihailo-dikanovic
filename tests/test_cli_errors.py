@@ -57,3 +57,13 @@ class TestCLIErrors(unittest.TestCase):
         # THEN: Exit code is 0 and stderr is empty
         self.assertEqual(result.returncode, 0)
         self.assertEqual(result.stderr, "")
+
+    def test_cli_story_003_s5_given_error_input_when_cli_runs_then_stdout_is_empty(
+        self,
+    ):
+        # GIVEN: Invalid input that causes an error
+        # WHEN: CLI runs
+        result = _run("5 5\n1 2 X\nM\n")
+
+        # THEN: stdout is empty (error does not pollute result stream)
+        self.assertEqual(result.stdout, "")
