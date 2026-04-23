@@ -34,3 +34,17 @@ class TestObstacle(unittest.TestCase):
         # THEN: Rover moves normally to (2,2)
         self.assertEqual(rover.x, 2)
         self.assertEqual(rover.y, 2)
+
+    def test_nav_story_003_s2_given_obstacle_stopped_rover_when_format_then_o_prefix(
+        self,
+    ):
+        # GIVEN: Rover stopped by obstacle at (1,2,E)
+        from mars_rover.adapters.output_formatter import OutputFormatter
+
+        rover = Rover(1, 2, Heading.E)
+
+        # WHEN: OutputFormatter formats with obstacle_stopped=True
+        result = OutputFormatter().format(rover, obstacle_stopped=True)
+
+        # THEN: Output has "O:" prefix
+        self.assertEqual(result, "O:1 2 E")
