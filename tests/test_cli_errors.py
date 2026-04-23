@@ -24,3 +24,13 @@ class TestCLIErrors(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("Input error", result.stderr)
         self.assertIn("Plateau", result.stderr)
+
+    def test_cli_story_003_s2_given_invalid_heading_when_cli_runs_then_exits_1(self):
+        # GIVEN: Rover line has invalid heading "X"
+        # WHEN: CLI runs
+        result = _run("5 5\n1 2 X\nM\n")
+
+        # THEN: Exit code is 1 and stderr contains descriptive message
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Input error", result.stderr)
+        self.assertIn("heading", result.stderr.lower())
