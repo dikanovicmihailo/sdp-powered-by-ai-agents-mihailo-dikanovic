@@ -46,3 +46,14 @@ class TestCLIErrors(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("Input error", result.stderr)
         self.assertIn("integers", result.stderr)
+
+    def test_cli_story_003_s4_given_valid_input_when_cli_runs_then_exits_0_no_stderr(
+        self,
+    ):
+        # GIVEN: Valid input
+        # WHEN: CLI runs
+        result = _run("5 5\n1 2 N\nM\n")
+
+        # THEN: Exit code is 0 and stderr is empty
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stderr, "")
