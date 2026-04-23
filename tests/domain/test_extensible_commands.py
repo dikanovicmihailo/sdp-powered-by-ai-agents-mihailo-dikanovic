@@ -47,3 +47,16 @@ class TestExtensibleCommands(unittest.TestCase):
 
         # THEN: Rover faces East
         self.assertEqual(rover.heading, Heading.E)
+
+    def test_nav_story_004_s1_given_rover_at_position_when_uturn_then_no_move(
+        self,
+    ):
+        # GIVEN: Rover at (3,4,N)
+        rover = Rover(3, 4, Heading.N)
+
+        # WHEN: UTurn is executed
+        UTurn()(rover)
+
+        # THEN: Position unchanged
+        self.assertEqual(rover.x, 3)
+        self.assertEqual(rover.y, 4)
