@@ -37,3 +37,13 @@ class TestExtensibleCommands(unittest.TestCase):
 
         # THEN: Rover faces North
         self.assertEqual(rover.heading, Heading.N)
+
+    def test_nav_be_004_s1_given_rover_facing_west_when_uturn_then_faces_east(self):
+        # GIVEN: Rover facing West
+        rover = Rover(0, 0, Heading.W)
+
+        # WHEN: UTurn is executed
+        UTurn()(rover)
+
+        # THEN: Rover faces East
+        self.assertEqual(rover.heading, Heading.E)
