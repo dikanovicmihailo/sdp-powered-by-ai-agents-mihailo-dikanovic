@@ -8,7 +8,7 @@ from mars_rover.application.mission_controller import MissionController
 def main() -> None:
     text = sys.stdin.read()
     if not text.strip():
-        return
+        sys.exit(0)
     try:
         parser = InputParser()
         plateau, missions = parser.parse(text)
