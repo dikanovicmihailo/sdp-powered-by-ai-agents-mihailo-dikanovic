@@ -22,3 +22,21 @@ class TestMissionStory001S1(unittest.TestCase):
         # THEN: Each rover processed its own command independently
         self.assertEqual(results[0].heading, Heading.W)  # rover1 turned left
         self.assertEqual(results[1].heading, Heading.S)  # rover2 turned right
+
+
+class TestMissionStory001S2(unittest.TestCase):
+    def test_s2_given_rover1_finishes_when_rover2_starts_then_rover2_uses_own_position(
+        self,
+    ):
+        # GIVEN: Rover 1 at boundary, Rover 2 at its own start
+        plateau = Plateau(5, 5)
+        rover1 = Rover(5, 5, Heading.N)
+        rover2 = Rover(0, 0, Heading.E)
+        controller = MissionController(plateau)
+
+        # WHEN: Mission runs
+        results = controller.run([(rover1, "M"), (rover2, "M")])
+
+        # THEN: Rover 2 starts from its own position, unaffected by rover 1
+        self.assertEqual(results[1].x, 1)
+        self.assertEqual(results[1].y, 0)
