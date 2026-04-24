@@ -1,0 +1,69 @@
+import subprocess  # nosec B404
+import sys
+import unittest
+
+
+def _run(input_text: str):
+    return subprocess.run(  # nosec B603
+        [sys.executable, "-m", "mars_rover"],
+        input=input_text,
+        capture_output=True,
+        text=True,
+    )
+
+
+class TestCLIErrors(unittest.TestCase):
+    def test_cli_story_003_s1_given_missing_plateau_height_when_cli_runs_then_exits_1(
+        self,
+    ):
+        # GIVEN: Plateau line is missing height
+        # WHEN: CLI runs
+        result = _run("5\n1 2 N\nM\n")
+
+        # THEN: Exit code is 1 and stderr contains descriptive message
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Input error", result.stderr)
+        self.assertIn("Plateau", result.stderr)
+
+    def test_cli_story_003_s2_given_invalid_heading_when_cli_runs_then_exits_1(self):
+        # GIVEN: Rover line has invalid heading "X"
+        # WHEN: CLI runs
+        result = _run("5 5\n1 2 X\nM\n")
+
+        # THEN: Exit code is 1 and stderr contains descriptive message
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Input error", result.stderr)
+        self.assertIn("heading", result.stderr.lower())
+
+    def test_cli_story_003_s3_given_non_integer_coords_when_cli_runs_then_exits_1(
+        self,
+    ):
+        # GIVEN: Rover line has non-integer coordinates
+        # WHEN: CLI runs
+        result = _run("5 5\na b N\nM\n")
+
+        # THEN: Exit code is 1 and stderr contains descriptive message
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Input error", result.stderr)
+        self.assertIn("integers", result.stderr)
+
+    def test_cli_story_003_s4_given_valid_input_when_cli_runs_then_exits_0_no_stderr(
+        self,
+    ):
+        # GIVEN: Valid input
+        # WHEN: CLI runs
+        result = _run("5 5\n1 2 N\nM\n")
+
+        # THEN: Exit code is 0 and stderr is empty
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stderr, "")
+
+    def test_cli_story_003_s5_given_error_input_when_cli_runs_then_stdout_is_empty(
+        self,
+    ):
+        # GIVEN: Invalid input that causes an error
+        # WHEN: CLI runs
+        result = _run("5 5\n1 2 X\nM\n")
+
+        # THEN: stdout is empty (error does not pollute result stream)
+        self.assertEqual(result.stdout, "")
