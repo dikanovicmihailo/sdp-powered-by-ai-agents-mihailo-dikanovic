@@ -19,11 +19,11 @@ If this were a 50-story backlog, the Core tier would contain ~10 stories (20%). 
 | NAV-STORY-001 | [navigate-rover.md](navigate-rover.md) | Navigate a rover | Domain | 🔴 Core | ✅ Implemented |
 | CLI-STORY-002 | [report-positions.md](report-positions.md) | Report final positions | Adapter | 🔴 Core | ✅ Implemented |
 | NAV-STORY-002 | [boundary-safe-stop.md](boundary-safe-stop.md) | Boundary safe-stop | Domain | 🔴 Core | ✅ Implemented |
-| MISSION-STORY-001 | [multi-rover-mission.md](multi-rover-mission.md) | Multi-rover mission | Application | 🟡 Secondary | ⬜ Todo |
-| CLI-STORY-001 | [cli-input.md](cli-input.md) | CLI pipe input | Adapter | 🟡 Secondary | ⬜ Todo |
-| CLI-STORY-003 | [input-validation.md](input-validation.md) | Input validation & errors | Adapter | 🟡 Secondary | ⬜ Todo |
-| NAV-STORY-003 | [obstacle-detection.md](obstacle-detection.md) | Obstacle detection | Domain | 🟢 Optional | ⬜ Todo |
-| NAV-STORY-004 | [extensible-commands.md](extensible-commands.md) | Extensible command types | Domain | 🟢 Optional | ⬜ Todo |
+| MISSION-STORY-001 | [multi-rover-mission.md](multi-rover-mission.md) | Multi-rover mission | Application | 🟡 Secondary | ✅ Implemented |
+| CLI-STORY-001 | [cli-input.md](cli-input.md) | CLI pipe input | Adapter | 🟡 Secondary | ✅ Implemented |
+| CLI-STORY-003 | [input-validation.md](input-validation.md) | Input validation & errors | Adapter | 🟡 Secondary | ✅ Implemented |
+| NAV-STORY-003 | [obstacle-detection.md](obstacle-detection.md) | Obstacle detection | Domain | 🟢 Optional | ✅ Implemented |
+| NAV-STORY-004 | [extensible-commands.md](extensible-commands.md) | Extensible command types | Domain | 🟢 Optional | ✅ Implemented |
 
 ---
 
@@ -85,11 +85,11 @@ All scenarios use **GIVEN-WHEN-THEN** format with unique scenario IDs: `{STORY-I
  - [x] NAV-STORY-001 Navigate a rover
  - [x] CLI-STORY-002 Report final positions
  - [x] NAV-STORY-002 Boundary safe-stop
-- [ ] MISSION-STORY-001 Multi-rover mission
-- [ ] CLI-STORY-001 CLI pipe input
-- [ ] CLI-STORY-003 Input validation & errors
-- [ ] NAV-STORY-003 Obstacle detection
-- [ ] NAV-STORY-004 Extensible command types
+ - [x] MISSION-STORY-001 Multi-rover mission
+ - [x] CLI-STORY-001 CLI pipe input
+ - [x] CLI-STORY-003 Input validation & errors
+ - [x] NAV-STORY-003 Obstacle detection
+ - [x] NAV-STORY-004 Extensible command types
 
 ---
 
